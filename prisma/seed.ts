@@ -83,6 +83,28 @@ function matchChallenge(id: string, lessonId: string, order: number, words: Word
   };
 }
 
+// Typed-answer variant of mcChallenge: same alternating direction, but the
+// user types the answer instead of picking from choices.
+function fillBlankChallenge(
+  id: string,
+  lessonId: string,
+  order: number,
+  word: WordDef,
+  askTerm: boolean
+): ChallengeRow {
+  return {
+    id,
+    lessonId,
+    type: "FILL_BLANK",
+    order,
+    prompt: askTerm
+      ? `Type the Spanish for "${word.translation}"`
+      : `Type the English for "${word.term}"`,
+    correctAnswer: askTerm ? word.term : word.translation,
+    meta: JSON.stringify({ wordIds: [wordId(word.term)] }),
+  };
+}
+
 function translateChallenge(id: string, lessonId: string, order: number, sen: SentenceDef): ChallengeRow {
   return {
     id,
@@ -99,7 +121,8 @@ function translateChallenge(id: string, lessonId: string, order: number, sen: Se
 }
 
 // 3 lessons per unit: two halves of the vocab, then a checkpoint over all of it.
-function buildLessons(unitId: string, unit: UnitDef, distractorPool: WordDef[]) {
+// fillBlank sections swap multiple choice for typed answers.
+function buildLessons(unitId: string, unit: UnitDef, distractorPool: WordDef[], fillBlank: boolean) {
   const half1 = unit.words.slice(0, 3);
   const half2 = unit.words.slice(3, 6);
   const others = (exclude: WordDef[]) =>
@@ -123,8 +146,13 @@ function buildLessons(unitId: string, unit: UnitDef, distractorPool: WordDef[]) 
     const rows: ChallengeRow[] = [];
     let order = 1;
     for (const [wi, word] of def.words.entries()) {
-      const pool = rotate(others([word]), wi * 5 + li * 3 + unitId.length).slice(0, 3);
-      rows.push(mcChallenge(`ch-${lessonId}-${order}`, lessonId, order, word, pool, (wi + li) % 2 === 0));
+      const askTerm = (wi + li) % 2 === 0;
+      if (fillBlank) {
+        rows.push(fillBlankChallenge(`ch-${lessonId}-${order}`, lessonId, order, word, askTerm));
+      } else {
+        const pool = rotate(others([word]), wi * 5 + li * 3 + unitId.length).slice(0, 3);
+        rows.push(mcChallenge(`ch-${lessonId}-${order}`, lessonId, order, word, pool, askTerm));
+      }
       order++;
     }
     rows.push(matchChallenge(`ch-${lessonId}-${order}`, lessonId, order, def.matchWords));
@@ -154,6 +182,21 @@ function constructible(es: string, bank: string[]): boolean {
 }
 
 function validate(vocab: Map<string, WordDef>) {
+  // Base vocab = words taught by non-fillBlank (L1/L2) sections. fillBlank
+  // (L3) sections must only reuse these — they reinforce, never introduce.
+  const baseVocab = new Map<string, WordDef>();
+  for (const section of sections)
+    if (!section.fillBlank)
+      for (const unit of section.units)
+        for (const word of unit.words) {
+          const prior = baseVocab.get(word.term);
+          if (prior && prior.translation !== word.translation)
+            throw new Error(
+              `Word "${word.term}" defined with conflicting translations: "${prior.translation}" vs "${word.translation}" (${unit.title})`
+            );
+          baseVocab.set(word.term, word);
+        }
+
   const unitIds = new Set<string>();
   for (const section of sections) {
     for (const unit of section.units) {
@@ -164,6 +207,17 @@ function validate(vocab: Map<string, WordDef>) {
 
       if (unit.words.length !== 6)
         throw new Error(`Unit "${unit.title}" has ${unit.words.length} words (expected 6)`);
+
+      if (section.fillBlank)
+        for (const word of unit.words) {
+          const base = baseVocab.get(word.term);
+          if (!base)
+            throw new Error(`fillBlank unit "${unit.title}" introduces new word "${word.term}"`);
+          if (base.translation !== word.translation)
+            throw new Error(
+              `fillBlank unit "${unit.title}" changes translation of "${word.term}": "${base.translation}" vs "${word.translation}"`
+            );
+        }
 
       for (const sen of unit.sentences) {
         for (const term of sen.words)
@@ -225,7 +279,7 @@ async function main() {
         },
       });
 
-      for (const lesson of buildLessons(unitId, unit, allWords)) {
+      for (const lesson of buildLessons(unitId, unit, allWords, section.fillBlank ?? false)) {
         await db.lesson.create({
           data: { id: lesson.id, unitId, title: lesson.title, order: lesson.order },
         });

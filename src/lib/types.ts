@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CHALLENGE_TYPES = ["MULTIPLE_CHOICE", "TRANSLATE", "MATCH"] as const;
+export const CHALLENGE_TYPES = ["MULTIPLE_CHOICE", "TRANSLATE", "MATCH", "FILL_BLANK"] as const;
 export type ChallengeType = (typeof CHALLENGE_TYPES)[number];
 
 // Type-specific payloads stored as JSON text in Challenge.meta.
@@ -23,14 +23,20 @@ export const matchMeta = z.object({
   wordIds: z.array(z.string()),
 });
 
+export const fillBlankMeta = z.object({
+  wordIds: z.array(z.string()),
+});
+
 export type MultipleChoiceMeta = z.infer<typeof multipleChoiceMeta>;
 export type TranslateMeta = z.infer<typeof translateMeta>;
 export type MatchMeta = z.infer<typeof matchMeta>;
+export type FillBlankMeta = z.infer<typeof fillBlankMeta>;
 
 export type ChallengeDTO =
   | { id: string; order: number; prompt: string; correctAnswer: string; type: "MULTIPLE_CHOICE"; meta: MultipleChoiceMeta }
   | { id: string; order: number; prompt: string; correctAnswer: string; type: "TRANSLATE"; meta: TranslateMeta }
-  | { id: string; order: number; prompt: string; correctAnswer: string; type: "MATCH"; meta: MatchMeta };
+  | { id: string; order: number; prompt: string; correctAnswer: string; type: "MATCH"; meta: MatchMeta }
+  | { id: string; order: number; prompt: string; correctAnswer: string; type: "FILL_BLANK"; meta: FillBlankMeta };
 
 export function parseChallenge(row: {
   id: string;
@@ -54,6 +60,8 @@ export function parseChallenge(row: {
       return { ...base, type: "TRANSLATE", meta: translateMeta.parse(raw) };
     case "MATCH":
       return { ...base, type: "MATCH", meta: matchMeta.parse(raw) };
+    case "FILL_BLANK":
+      return { ...base, type: "FILL_BLANK", meta: fillBlankMeta.parse(raw) };
     default:
       throw new Error(`Unknown challenge type: ${row.type}`);
   }

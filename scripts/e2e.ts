@@ -14,7 +14,7 @@ const SHOTS = process.env.SHOTS_DIR ?? ".";
 
 type Challenge = {
   id: string;
-  type: "MULTIPLE_CHOICE" | "TRANSLATE" | "MATCH";
+  type: "MULTIPLE_CHOICE" | "TRANSLATE" | "MATCH" | "FILL_BLANK";
   prompt: string;
   correctAnswer: string;
   meta: {
@@ -56,6 +56,11 @@ async function solveChallenge(page: Page, ch: Challenge, deliberatelyWrong: bool
       ? ch.meta.choices!.find((c) => c !== ch.correctAnswer)!
       : ch.correctAnswer;
     await page.getByRole("radio", { name: new RegExp(`\\d+\\s*${escapeRe(target)}$`) }).click();
+    await page.getByRole("button", { name: "Check" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
+  } else if (ch.type === "FILL_BLANK") {
+    const text = deliberatelyWrong ? "xyz totally wrong" : ch.correctAnswer;
+    await page.getByRole("textbox", { name: "Your answer" }).fill(text);
     await page.getByRole("button", { name: "Check" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
   } else if (ch.type === "TRANSLATE") {
@@ -170,6 +175,34 @@ async function main() {
 
   const final = await api<UserState>("/api/user");
   expect(final.xp > after.xp, `review XP awarded (${after.xp} -> ${final.xp})`);
+
+  // --- 5. Level 3 lesson: typed answers (FILL_BLANK) end-to-end
+  const fullCourse = await api<{
+    sections: { title: string; units: { lessons: { id: string }[] }[] }[];
+  }>("/api/units");
+  const l3Section = fullCourse.sections.find((s) => s.title.includes("Level 3"));
+  if (!l3Section) {
+    expect(false, "a Level 3 section exists");
+  } else {
+    const l3LessonId = l3Section.units[0].lessons[0].id;
+    const l3Lesson = await api<{ challenges: Challenge[] }>(`/api/lessons/${l3LessonId}`);
+    expect(
+      l3Lesson.challenges.some((c) => c.type === "FILL_BLANK") &&
+        l3Lesson.challenges.every((c) => c.type !== "MULTIPLE_CHOICE"),
+      "L3 lesson uses FILL_BLANK instead of MULTIPLE_CHOICE"
+    );
+
+    await page.goto(`${BASE}/lesson/${l3LessonId}`);
+    await page
+      .getByRole("heading", { name: l3Lesson.challenges[0].prompt })
+      .waitFor({ timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/fill-blank.png` });
+    for (const ch of l3Lesson.challenges) await solveChallenge(page, ch, false);
+    await page.getByText("¡Muy bien!").waitFor({ timeout: 10000 });
+
+    const afterL3 = await api<UserState>("/api/user");
+    expect(afterL3.xp > final.xp, `L3 lesson XP awarded (${final.xp} -> ${afterL3.xp})`);
+  }
 
   await browser.close();
   if (failures.length) {

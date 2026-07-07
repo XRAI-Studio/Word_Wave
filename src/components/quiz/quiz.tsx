@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
+import { FillBlank } from "@/components/quiz/fill-blank";
 import { MatchPairs } from "@/components/quiz/match-pairs";
 import { MultipleChoice } from "@/components/quiz/multiple-choice";
 import { ResultScreen } from "@/components/quiz/result-screen";
@@ -14,6 +15,18 @@ import type { ChallengeDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Status = "answering" | "correct" | "wrong" | "submitting" | "done";
+
+// Forgiving comparison for typed answers: case-, accent-, and
+// punctuation-insensitive ("como estas" matches "¿cómo estás?").
+function normalizeTyped(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9ñ\s]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 interface Rewards {
   xpEarned: number;
@@ -40,6 +53,7 @@ export function Quiz({
   const [status, setStatus] = useState<Status>("answering");
   const [mcValue, setMcValue] = useState<string | null>(null);
   const [trValue, setTrValue] = useState<number[]>([]);
+  const [fbValue, setFbValue] = useState("");
   const [solved, setSolved] = useState<Set<string>>(new Set());
   const [rewards, setRewards] = useState<(Rewards & { accuracy: number }) | null>(null);
 
@@ -89,6 +103,15 @@ export function Quiz({
         .trim();
       if (built === current.correctAnswer.toLowerCase().trim()) handleCorrect();
       else handleWrong();
+    } else if (current.type === "FILL_BLANK") {
+      // Accept the expected answer with any parenthetical qualifier dropped
+      // ("I am (feeling)" accepts "i am").
+      const expected = [
+        current.correctAnswer,
+        current.correctAnswer.replace(/\([^)]*\)/g, ""),
+      ].map(normalizeTyped);
+      if (expected.includes(normalizeTyped(fbValue))) handleCorrect();
+      else handleWrong();
     }
   }
 
@@ -136,6 +159,7 @@ export function Quiz({
     setIdx(idx + 1);
     setMcValue(null);
     setTrValue([]);
+    setFbValue("");
     setStatus("answering");
   }
 
@@ -152,7 +176,11 @@ export function Quiz({
   if (!current) return null;
 
   const canCheck =
-    current.type === "MULTIPLE_CHOICE" ? mcValue !== null : trValue.length > 0;
+    current.type === "MULTIPLE_CHOICE"
+      ? mcValue !== null
+      : current.type === "FILL_BLANK"
+        ? fbValue.trim().length > 0
+        : trValue.length > 0;
   const progress = (solved.size / challenges.length) * 100;
 
   return (
@@ -197,6 +225,17 @@ export function Quiz({
               meta={current.meta}
               value={trValue}
               onChange={setTrValue}
+              disabled={status !== "answering"}
+            />
+          )}
+          {current.type === "FILL_BLANK" && (
+            <FillBlank
+              key={`${current.id}-${idx}`}
+              value={fbValue}
+              onChange={setFbValue}
+              onSubmit={() => {
+                if (status === "answering" && fbValue.trim().length > 0) check();
+              }}
               disabled={status !== "answering"}
             />
           )}
