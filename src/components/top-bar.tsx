@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
-import { Flame, Zap } from "lucide-react";
+import { Flame, Gem, Heart, Zap } from "lucide-react";
 import { useGameStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function TopBar() {
-  const { xp, streak, hydrated, hydrate } = useGameStore();
+  const { xp, streak, hearts, gems, hydrated, hydrate } = useGameStore();
 
   useEffect(() => {
     hydrate();
@@ -24,6 +24,16 @@ export function TopBar() {
           hydrated ? "opacity-100" : "opacity-0"
         )}
       >
+        <span className="flex items-center gap-1.5 text-heart" title="Hearts">
+          <Heart className="size-5 fill-current" aria-hidden />
+          {hearts}
+          <span className="sr-only">hearts</span>
+        </span>
+        <span className="flex items-center gap-1.5 text-brand" title="Gems">
+          <Gem className="size-5 fill-current" aria-hidden />
+          {gems}
+          <span className="sr-only">gems</span>
+        </span>
         <span className="flex items-center gap-1.5 text-flame" title="Day streak">
           <Flame className="size-5 fill-current" aria-hidden />
           {streak}

@@ -25,7 +25,7 @@ type Challenge = {
   };
 };
 
-type UserState = { xp: number; streakCount: number };
+type UserState = { xp: number; streakCount: number; hearts: number; gems: number; streakFreezes: number };
 
 async function api<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path);
@@ -138,6 +138,17 @@ async function main() {
   const after = await api<UserState>("/api/user");
   expect(after.xp === before.xp + 20, `lesson XP +20 (${before.xp} -> ${after.xp})`);
   expect(after.streakCount >= 1, `streak alive (got ${after.streakCount})`);
+  expect(
+    after.hearts === Math.max(0, before.hearts - 1),
+    `mistake cost a heart (${before.hearts} -> ${after.hearts})`
+  );
+  expect(after.gems > before.gems, `lesson gems awarded (${before.gems} -> ${after.gems})`);
+
+  const questsNow = await api<{ quests: { progress: number; completed: boolean }[] }>("/api/quests");
+  expect(
+    questsNow.quests.some((q) => q.progress > 0 || q.completed),
+    "daily quest progress advanced"
+  );
 
   const unitsAfter = await api<{ activeLessonId: string | null }>("/api/units");
   expect(
@@ -175,6 +186,23 @@ async function main() {
 
   const final = await api<UserState>("/api/user");
   expect(final.xp > after.xp, `review XP awarded (${after.xp} -> ${final.xp})`);
+  expect(final.gems > after.gems, `review gems awarded (${after.gems} -> ${final.gems})`);
+  expect(final.hearts === after.hearts, `review costs no hearts (still ${final.hearts})`);
+
+  // --- 4b. streak-freeze shop honors its contract either way
+  const shopRes = await fetch(BASE + "/api/shop/streak-freeze", { method: "POST" });
+  const shopBody = (await shopRes.json()) as { streakFreezes?: number; error?: string };
+  if (shopRes.ok) {
+    expect(
+      (shopBody.streakFreezes ?? 0) === final.streakFreezes + 1,
+      `streak freeze purchased (${final.streakFreezes} -> ${shopBody.streakFreezes})`
+    );
+  } else {
+    expect(
+      shopRes.status === 400 && typeof shopBody.error === "string",
+      `streak freeze purchase rejected cleanly (${shopRes.status}: ${shopBody.error})`
+    );
+  }
 
   // --- 5. Level 3 lesson: typed answers (FILL_BLANK) end-to-end
   const fullCourse = await api<{

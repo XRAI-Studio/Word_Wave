@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { Heart, X } from "lucide-react";
 import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
 import { FillBlank } from "@/components/quiz/fill-blank";
@@ -32,6 +32,11 @@ interface Rewards {
   xpEarned: number;
   xp: number;
   streakCount: number;
+  hearts: number;
+  gems: number;
+  gemsEarned: number;
+  questsCompleted: { key: string; title: string; gems: number }[];
+  achievementsUnlocked: { key: string; title: string; description: string }[];
 }
 
 // Orchestrates a quiz session. Lesson mode marks the lesson complete;
@@ -46,7 +51,7 @@ export function Quiz({
   lessonId?: string;
 }) {
   const router = useRouter();
-  const { hydrate, applyRewards } = useGameStore();
+  const { hydrate, applyRewards, hearts: heartsAtStart, hydrated } = useGameStore();
 
   const [queue, setQueue] = useState(challenges);
   const [idx, setIdx] = useState(0);
@@ -55,6 +60,7 @@ export function Quiz({
   const [trValue, setTrValue] = useState<number[]>([]);
   const [fbValue, setFbValue] = useState("");
   const [solved, setSolved] = useState<Set<string>>(new Set());
+  const [mistakes, setMistakes] = useState(0);
   const [rewards, setRewards] = useState<(Rewards & { accuracy: number }) | null>(null);
 
   // wordId -> true only if never missed this session; challengeId -> first try correct
@@ -87,6 +93,7 @@ export function Quiz({
   function handleWrong() {
     recordWords(current.meta.wordIds, false);
     recordFirstTry(current.id, false);
+    setMistakes((m) => m + 1);
     setQueue((q) => [...q, current]); // Duolingo-style: missed cards come back
     setStatus("wrong");
   }
@@ -127,6 +134,7 @@ export function Quiz({
               body: JSON.stringify({
                 failedWordIds: entries.filter(([, ok]) => !ok).map(([id]) => id),
                 correctWordIds: entries.filter(([, ok]) => ok).map(([id]) => id),
+                mistakes,
               }),
             })
           : await fetch("/api/review/complete", {
@@ -138,7 +146,12 @@ export function Quiz({
             });
       if (!res.ok) throw new Error(String(res.status));
       const data: Rewards = await res.json();
-      applyRewards(data);
+      applyRewards({
+        xp: data.xp,
+        streakCount: data.streakCount,
+        hearts: data.hearts,
+        gems: data.gems,
+      });
       const attempts = [...firstTry.current.values()];
       const accuracy = attempts.length
         ? attempts.filter(Boolean).length / attempts.length
@@ -169,6 +182,9 @@ export function Quiz({
         xpEarned={rewards.xpEarned}
         streak={rewards.streakCount}
         accuracy={rewards.accuracy}
+        gemsEarned={rewards.gemsEarned}
+        questsCompleted={rewards.questsCompleted}
+        achievementsUnlocked={rewards.achievementsUnlocked}
       />
     );
   }
@@ -206,6 +222,13 @@ export function Quiz({
             style={{ width: `${progress}%` }}
           />
         </div>
+        {mode === "lesson" && hydrated && (
+          <span className="flex items-center gap-1.5 font-display font-bold text-heart" title="Hearts">
+            <Heart className="size-5 fill-current" aria-hidden />
+            {Math.max(0, heartsAtStart - mistakes)}
+            <span className="sr-only">hearts left</span>
+          </span>
+        )}
       </div>
 
       {/* challenge */}

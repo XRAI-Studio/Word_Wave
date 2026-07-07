@@ -7,15 +7,44 @@ datasource db {
 }
 
 model User {
-  id              String   @id @default("local")
-  hearts          Int      @default(5)
-  xp              Int      @default(0)
-  streakCount     Int      @default(0)
-  lastActiveDate  String? // YYYY-MM-DD of last lesson/review completion
-  heartsUpdatedAt DateTime @default(now())
+  id               String   @id @default("local")
+  hearts           Int      @default(5)
+  xp               Int      @default(0)
+  streakCount      Int      @default(0)
+  lastActiveDate   String? // YYYY-MM-DD of last lesson/review completion
+  heartsUpdatedAt  DateTime @default(now())
+  gems             Int      @default(0)
+  streakFreezes    Int      @default(0)
+  lessonsCompleted Int      @default(0)
+  perfectLessons   Int      @default(0)
+  reviewsCompleted Int      @default(0)
 
   lessonProgress LessonProgress[]
   wordReviews    WordReview[]
+  questProgress  QuestProgress[]
+  achievements   Achievement[]
+}
+
+model QuestProgress {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String // YYYY-MM-DD the quest belongs to
+  questKey  String
+  progress  Int     @default(0)
+  completed Boolean @default(false)
+
+  @@unique([userId, date, questKey])
+}
+
+model Achievement {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key        String
+  unlockedAt DateTime @default(now())
+
+  @@unique([userId, key])
 }
 
 model Section {

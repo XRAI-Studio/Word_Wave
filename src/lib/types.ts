@@ -72,4 +72,15 @@ export interface UserDTO {
   xp: number;
   streakCount: number;
   lastActiveDate: string | null;
+  hearts: number;
+  gems: number;
+  streakFreezes: number;
+}
+
+export interface QuestDTO {
+  key: string;
+  title: string;
+  target: number;
+  progress: number;
+  completed: boolean;
 }

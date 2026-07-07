@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Map, RotateCcw } from "lucide-react";
+import { Map, RotateCcw, Trophy } from "lucide-react";
 import { CourseMenu } from "@/components/course-menu";
 import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/learn", label: "Learn", icon: Map },
   { href: "/review", label: "Review", icon: RotateCcw },
+  { href: "/awards", label: "Awards", icon: Trophy },
 ];
 
 export function Sidebar() {
