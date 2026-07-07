@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LingoDuo
 
-## Getting Started
+A local-first language learning app inspired by Duolingo. Everything runs on your machine: the course, your progress, and the spaced-repetition schedule live in a local SQLite file — no accounts, no network.
 
-First, run the development server:
+Ships with a small **Spanish for English speakers** course: 2 units, 8 lessons, ~50 exercises.
+
+## Stack
+
+- **Next.js** (App Router) + **TypeScript**
+- **SQLite** via **Prisma 7** (better-sqlite3 driver adapter), file at `prisma/dev.db`
+- **Tailwind CSS 4** + **shadcn/ui**
+- **Zustand** for client-side gamification state
+
+## Getting started
 
 ```bash
+npm install
+npm run db:migrate   # creates prisma/dev.db
+npm run db:seed      # loads the sample Spanish course (idempotent)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 — you land on the learn path.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Progression path** — a linear curriculum of units and lessons; finishing a lesson unlocks the next.
+- **Exercise engine** — multiple choice, tap-to-build translation, and pair matching. Missed cards re-queue to the end of the session, Duolingo-style.
+- **Gamification** — XP per session and a daily streak.
+- **Spaced repetition** — words you miss get an SM-2-lite review schedule (`src/lib/srs.ts`). Correct reviews stretch the interval by the ease factor; misses reset it to hours and lower the ease. Due words surface under **Review**.
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+- `prisma/schema.prisma` — User, Unit, Lesson, Challenge, Word, LessonProgress, WordReview
+- `src/app/api/*` — route handlers; the server is authoritative for XP, streaks, and SRS state
+- `src/components/quiz/*` — the exercise engine (`quiz.tsx` orchestrates; one component per exercise type)
+- `src/lib/` — Prisma client, SRS algorithm, gamification rules, zod schemas for exercise payloads, Zustand store
+- `prisma/seed.ts` — course content; edit it and re-run `npm run db:seed` to change the curriculum
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Verification
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run typecheck
+npm run lint
+npm run build
+npm run e2e   # drives the real UI with Playwright against a dev server on :3000 (override with E2E_BASE)
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The e2e script completes your current active lesson with a deliberate mistake, then asserts XP/streak changed, a review was scheduled, and a review session pays out XP. Note: it advances your real progress and review schedule.
