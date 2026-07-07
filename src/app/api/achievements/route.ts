@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { LOCAL_USER_ID } from "@/lib/user-service";
 
-// Keys the local user has unlocked (definitions live in rewards-defs.ts,
+// Keys the current user has unlocked (definitions live in rewards-defs.ts,
 // which the client imports directly).
 export async function GET() {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+
   const rows = await db.achievement.findMany({
-    where: { userId: LOCAL_USER_ID },
+    where: { userId: sessionUser.id },
     orderBy: { unlockedAt: "asc" },
   });
   return NextResponse.json({

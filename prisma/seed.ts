@@ -3,7 +3,9 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { sections, type SentenceDef, type UnitDef, type WordDef } from "./course-data";
 
-const dbFile = path.join(__dirname, "dev.db");
+const dbFile = process.env.DATABASE_PATH
+  ? path.resolve(process.env.DATABASE_PATH)
+  : path.join(__dirname, "dev.db");
 const db = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${dbFile}` }) });
 
 // Course content lives in ./course-data.ts; this file turns it into rows.
@@ -287,8 +289,6 @@ async function main() {
       }
     }
   }
-
-  await db.user.upsert({ where: { id: "local" }, update: {}, create: { id: "local" } });
 
   const counts = {
     sections: await db.section.count(),

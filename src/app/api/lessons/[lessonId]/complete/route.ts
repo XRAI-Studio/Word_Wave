@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import {
   MAX_HEARTS,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/gamification";
 import { applyCompletionRewards } from "@/lib/rewards";
 import { applySrsResults } from "@/lib/review-service";
-import { getLocalUser, LOCAL_USER_ID } from "@/lib/user-service";
+import { getUserState } from "@/lib/user-service";
 
 const bodySchema = z.object({
   failedWordIds: z.array(z.string()),
@@ -22,6 +23,12 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ lessonId: string }> }
 ) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+  const userId = sessionUser.id;
+
   const { lessonId } = await params;
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -34,17 +41,17 @@ export async function POST(
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  const user = await getLocalUser();
+  const user = await getUserState(userId);
   const now = new Date();
 
   await db.lessonProgress.upsert({
-    where: { userId_lessonId: { userId: LOCAL_USER_ID, lessonId } },
+    where: { userId_lessonId: { userId, lessonId } },
     update: { completed: true, completedAt: now },
-    create: { userId: LOCAL_USER_ID, lessonId, completed: true, completedAt: now },
+    create: { userId, lessonId, completed: true, completedAt: now },
   });
 
   await applySrsResults(
-    LOCAL_USER_ID,
+    userId,
     [
       ...failedWordIds.map((wordId) => ({ wordId, correct: false })),
       ...correctWordIds.map((wordId) => ({ wordId, correct: true })),
@@ -58,11 +65,11 @@ export async function POST(
   const streakCount = nextStreak(user.lastActiveDate, user.streakCount, now);
 
   // Soft hearts: mistakes cost hearts (floored at 0) but never block anything.
-  // user.hearts is already regen-adjusted by getLocalUser; restart the regen
+  // user.hearts is already regen-adjusted by getUserState; restart the regen
   // timer when a full set takes its first loss.
   const hearts = Math.max(0, user.hearts - mistakes);
   await db.user.update({
-    where: { id: LOCAL_USER_ID },
+    where: { id: userId },
     data: {
       xp: { increment: xpEarned },
       streakCount,
@@ -73,6 +80,7 @@ export async function POST(
   });
 
   const rewards = await applyCompletionRewards({
+    userId,
     kind: "lesson",
     xpEarned,
     perfect,
@@ -82,7 +90,7 @@ export async function POST(
     now,
   });
 
-  const updated = await db.user.findUniqueOrThrow({ where: { id: LOCAL_USER_ID } });
+  const updated = await db.user.findUniqueOrThrow({ where: { id: userId } });
 
   return NextResponse.json({
     xpEarned,

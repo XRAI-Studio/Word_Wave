@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseChallenge } from "@/lib/types";
 
@@ -6,6 +7,11 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ lessonId: string }> }
 ) {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+
   const { lessonId } = await params;
   const lesson = await db.lesson.findUnique({
     where: { id: lessonId },

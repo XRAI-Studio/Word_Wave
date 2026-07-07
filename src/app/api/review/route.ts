@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { ChallengeDTO } from "@/lib/types";
-import { LOCAL_USER_ID } from "@/lib/user-service";
 
 const SESSION_CAP = 10;
 
 // Words due for review, synthesized into multiple-choice challenges.
 export async function GET() {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+
   const due = await db.wordReview.findMany({
-    where: { userId: LOCAL_USER_ID, dueAt: { lte: new Date() } },
+    where: { userId: sessionUser.id, dueAt: { lte: new Date() } },
     orderBy: { dueAt: "asc" },
     include: { word: true },
   });

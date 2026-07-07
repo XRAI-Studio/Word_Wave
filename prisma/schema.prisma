@@ -7,7 +7,12 @@ datasource db {
 }
 
 model User {
-  id               String   @id @default("local")
+  id               String   @id @default(cuid())
+  email            String?  @unique
+  passwordHash     String?
+  googleId         String?  @unique
+  displayName      String?
+  createdAt        DateTime @default(now())
   hearts           Int      @default(5)
   xp               Int      @default(0)
   streakCount      Int      @default(0)
@@ -23,6 +28,15 @@ model User {
   wordReviews    WordReview[]
   questProgress  QuestProgress[]
   achievements   Achievement[]
+  sessions       Session[]
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }
 
 model QuestProgress {

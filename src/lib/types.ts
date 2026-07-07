@@ -69,12 +69,16 @@ export function parseChallenge(row: {
 
 export interface UserDTO {
   id: string;
+  email: string | null;
+  displayName: string | null;
+  createdAt: string;
   xp: number;
   streakCount: number;
   lastActiveDate: string | null;
   hearts: number;
   gems: number;
   streakFreezes: number;
+  lessonsCompleted: number;
 }
 
 export interface QuestDTO {

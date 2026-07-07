@@ -2,17 +2,11 @@ import { db } from "@/lib/db";
 import { reconcileStreak, regenHearts } from "@/lib/gamification";
 import type { UserDTO } from "@/lib/types";
 
-export const LOCAL_USER_ID = "local";
-
-// Fetch (or create) the single local user, lazily applying heart regeneration
-// and freeze-aware streak reconciliation. Persists only when something
+// Fetch a user's game state, lazily applying heart regeneration and
+// freeze-aware streak reconciliation. Persists only when something
 // actually changed.
-export async function getLocalUser(now = new Date()): Promise<UserDTO> {
-  const user = await db.user.upsert({
-    where: { id: LOCAL_USER_ID },
-    update: {},
-    create: { id: LOCAL_USER_ID },
-  });
+export async function getUserState(userId: string, now = new Date()): Promise<UserDTO> {
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
 
   const streak = reconcileStreak(user.lastActiveDate, user.streakCount, user.streakFreezes, now);
   const hearts = regenHearts(user.hearts, user.heartsUpdatedAt, now);
@@ -25,7 +19,7 @@ export async function getLocalUser(now = new Date()): Promise<UserDTO> {
 
   if (changed) {
     await db.user.update({
-      where: { id: LOCAL_USER_ID },
+      where: { id: userId },
       data: {
         streakCount: streak.streakCount,
         streakFreezes: streak.streakFreezes,
@@ -38,6 +32,10 @@ export async function getLocalUser(now = new Date()): Promise<UserDTO> {
 
   return {
     id: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    createdAt: user.createdAt.toISOString(),
+    lessonsCompleted: user.lessonsCompleted,
     xp: user.xp,
     streakCount: streak.streakCount,
     lastActiveDate: streak.lastActiveDate,

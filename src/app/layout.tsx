@@ -1,7 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Baloo_2, Nunito } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+
+export const viewport: Viewport = {
+  themeColor: "#1e5ae8",
+};
 
 const baloo = Baloo_2({
   variable: "--font-baloo",
@@ -16,7 +20,13 @@ const nunito = Nunito({
 
 export const metadata: Metadata = {
   title: "LingoDuo — learn Spanish, five minutes at a time",
-  description: "A local-first language learning app: lessons, streaks, and spaced repetition.",
+  description: "Lessons, streaks, and spaced repetition — on your phone or PC.",
+  applicationName: "LingoDuo",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "LingoDuo" },
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({

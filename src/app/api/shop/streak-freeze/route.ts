@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { MAX_STREAK_FREEZES, STREAK_FREEZE_COST } from "@/lib/gamification";
 import { checkAchievements } from "@/lib/rewards";
-import { getLocalUser, LOCAL_USER_ID } from "@/lib/user-service";
+import { getUserState } from "@/lib/user-service";
 
 // Buy one streak freeze for gems.
 export async function POST() {
-  const user = await getLocalUser();
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+  const user = await getUserState(sessionUser.id);
 
   if (user.streakFreezes >= MAX_STREAK_FREEZES) {
     return NextResponse.json(
@@ -22,14 +27,14 @@ export async function POST() {
   }
 
   const updated = await db.user.update({
-    where: { id: LOCAL_USER_ID },
+    where: { id: user.id },
     data: {
       gems: { decrement: STREAK_FREEZE_COST },
       streakFreezes: { increment: 1 },
     },
   });
 
-  const achievementsUnlocked = await checkAchievements();
+  const achievementsUnlocked = await checkAchievements(user.id);
 
   return NextResponse.json({
     gems: updated.gems,

@@ -9,7 +9,6 @@ import {
   todayStr,
 } from "@/lib/gamification";
 import { ACHIEVEMENTS, questsForDate, type QuestKind } from "@/lib/rewards-defs";
-import { LOCAL_USER_ID } from "@/lib/user-service";
 
 export interface QuestCompleted {
   key: string;
@@ -25,15 +24,15 @@ export interface AchievementUnlocked {
 
 // Check every achievement against the user's current stats and persist any
 // new unlocks. Shared by completion routes and the shop.
-export async function checkAchievements(): Promise<AchievementUnlocked[]> {
-  const user = await db.user.findUniqueOrThrow({ where: { id: LOCAL_USER_ID } });
+export async function checkAchievements(userId: string): Promise<AchievementUnlocked[]> {
+  const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
   const owned = new Set(
-    (await db.achievement.findMany({ where: { userId: LOCAL_USER_ID } })).map((a) => a.key)
+    (await db.achievement.findMany({ where: { userId } })).map((a) => a.key)
   );
   const unlocked: AchievementUnlocked[] = [];
   for (const def of ACHIEVEMENTS) {
     if (owned.has(def.key) || !def.test(user)) continue;
-    await db.achievement.create({ data: { userId: LOCAL_USER_ID, key: def.key } });
+    await db.achievement.create({ data: { userId, key: def.key } });
     unlocked.push({ key: def.key, title: def.title, description: def.description });
   }
   return unlocked;
@@ -43,6 +42,7 @@ export async function checkAchievements(): Promise<AchievementUnlocked[]> {
 // Increments lifetime counters, advances today's quests, awards gems
 // (activity + quest + streak-milestone), and checks achievements.
 export async function applyCompletionRewards(opts: {
+  userId: string;
   kind: "lesson" | "review";
   xpEarned: number;
   perfect: boolean;
@@ -55,7 +55,7 @@ export async function applyCompletionRewards(opts: {
   questsCompleted: QuestCompleted[];
   achievementsUnlocked: AchievementUnlocked[];
 }> {
-  const { kind, xpEarned, perfect, wordsReviewed, streakCount, firstActivityToday, now } = opts;
+  const { userId, kind, xpEarned, perfect, wordsReviewed, streakCount, firstActivityToday, now } = opts;
 
   let gemsEarned =
     kind === "lesson" ? GEMS_PER_LESSON + (perfect ? GEMS_PERFECT_BONUS : 0) : GEMS_PER_REVIEW;
@@ -79,9 +79,9 @@ export async function applyCompletionRewards(opts: {
     const inc = increments[quest.kind];
     if (inc <= 0) continue;
     const row = await db.questProgress.upsert({
-      where: { userId_date_questKey: { userId: LOCAL_USER_ID, date, questKey: quest.key } },
+      where: { userId_date_questKey: { userId, date, questKey: quest.key } },
       update: {},
-      create: { userId: LOCAL_USER_ID, date, questKey: quest.key },
+      create: { userId, date, questKey: quest.key },
     });
     if (row.completed) continue;
     const progress = Math.min(quest.target, row.progress + inc);
@@ -97,7 +97,7 @@ export async function applyCompletionRewards(opts: {
   }
 
   await db.user.update({
-    where: { id: LOCAL_USER_ID },
+    where: { id: userId },
     data: {
       gems: { increment: gemsEarned },
       ...(kind === "lesson" ? { lessonsCompleted: { increment: 1 } } : {}),
@@ -106,6 +106,6 @@ export async function applyCompletionRewards(opts: {
     },
   });
 
-  const achievementsUnlocked = await checkAchievements();
+  const achievementsUnlocked = await checkAchievements(userId);
   return { gemsEarned, questsCompleted, achievementsUnlocked };
 }

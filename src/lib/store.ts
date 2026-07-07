@@ -29,6 +29,11 @@ export const useGameStore = create<GameState>((set) => ({
   streakFreezes: 0,
   hydrate: async () => {
     const res = await fetch("/api/user");
+    if (res.status === 401) {
+      // Session expired mid-visit; the proxy only sees cookie presence.
+      window.location.href = "/login";
+      return;
+    }
     if (!res.ok) return;
     const user: UserDTO = await res.json();
     set({

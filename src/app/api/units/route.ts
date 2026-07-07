@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { LOCAL_USER_ID } from "@/lib/user-service";
 
 // Sections + units + lessons + completion state; drives the learn path screen.
 export async function GET() {
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  }
+
   const [sections, progress] = await Promise.all([
     db.section.findMany({
       orderBy: { order: "asc" },
@@ -16,7 +21,7 @@ export async function GET() {
         },
       },
     }),
-    db.lessonProgress.findMany({ where: { userId: LOCAL_USER_ID, completed: true } }),
+    db.lessonProgress.findMany({ where: { userId: sessionUser.id, completed: true } }),
   ]);
 
   const completedIds = new Set(progress.map((p) => p.lessonId));

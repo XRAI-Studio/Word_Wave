@@ -12,6 +12,9 @@ import { chromium, type Page } from "playwright";
 const BASE = process.env.E2E_BASE ?? "http://localhost:3000";
 const SHOTS = process.env.SHOTS_DIR ?? ".";
 
+// Session cookie of the throwaway user this run registers.
+let sessionCookie = "";
+
 type Challenge = {
   id: string;
   type: "MULTIPLE_CHOICE" | "TRANSLATE" | "MATCH" | "FILL_BLANK";
@@ -28,7 +31,7 @@ type Challenge = {
 type UserState = { xp: number; streakCount: number; hearts: number; gems: number; streakFreezes: number };
 
 async function api<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path);
+  const res = await fetch(BASE + path, { headers: { cookie: sessionCookie } });
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -87,15 +90,45 @@ function escapeRe(s: string) {
 
 async function main() {
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const failures: string[] = [];
   const expect = (cond: boolean, label: string) => {
     console.log(`${cond ? "PASS" : "FAIL"}: ${label}`);
     if (!cond) failures.push(label);
   };
 
+  // --- auth 1. logged-out requests are rejected / redirected
+  const anonRes = await fetch(BASE + "/api/user");
+  expect(anonRes.status === 401, `anonymous /api/user is 401 (got ${anonRes.status})`);
+
+  const anonContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const anonPage = await anonContext.newPage();
+  await anonPage.goto(BASE + "/learn");
+  await anonPage.waitForURL("**/login", { timeout: 10000 });
+  expect(anonPage.url().includes("/login"), "anonymous /learn redirects to /login");
+  await anonContext.close();
+
+  // --- auth 2. register a throwaway user and carry its session everywhere
+  const email = `e2e-${Date.now()}@example.com`;
+  const regRes = await fetch(BASE + "/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: "e2e-password", displayName: "E2E Runner" }),
+  });
+  expect(regRes.ok, `registered throwaway user ${email} (got ${regRes.status})`);
+  const setCookie = regRes.headers
+    .getSetCookie()
+    .find((c) => c.startsWith("lingoduo_session="));
+  if (!setCookie) throw new Error("register response did not set a session cookie");
+  sessionCookie = setCookie.split(";")[0];
+  const sessionToken = sessionCookie.split("=")[1];
+
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await context.addCookies([{ name: "lingoduo_session", value: sessionToken, url: BASE }]);
+  const page = await context.newPage();
+
   // --- 0. where are we starting from?
   const before = await api<UserState>("/api/user");
+  expect(before.xp === 0, `fresh user starts at 0 XP (got ${before.xp})`);
   const course = await api<{
     activeLessonId: string | null;
     sections: { units: { lessons: { id: string; title: string }[] }[] }[];
@@ -162,7 +195,8 @@ async function main() {
   const backdateScript =
     "const {PrismaClient}=require('@prisma/client');" +
     "const {PrismaBetterSqlite3}=require('@prisma/adapter-better-sqlite3');" +
-    "const db=new PrismaClient({adapter:new PrismaBetterSqlite3({url:'file:'+require('path').join(process.cwd(),'prisma','dev.db')})});" +
+    "const f=process.env.DATABASE_PATH?require('path').resolve(process.env.DATABASE_PATH):require('path').join(process.cwd(),'prisma','dev.db');" +
+    "const db=new PrismaClient({adapter:new PrismaBetterSqlite3({url:'file:'+f})});" +
     "db.wordReview.updateMany({where:{wordId:{in:JSON.parse(process.env.MISSED_IDS)}},data:{dueAt:new Date(Date.now()-1000)}})" +
     ".then(r=>{console.log(r.count);return db.$disconnect()})";
   const backdated = execSync(`npx tsx -e "${backdateScript}"`, {
@@ -190,7 +224,10 @@ async function main() {
   expect(final.hearts === after.hearts, `review costs no hearts (still ${final.hearts})`);
 
   // --- 4b. streak-freeze shop honors its contract either way
-  const shopRes = await fetch(BASE + "/api/shop/streak-freeze", { method: "POST" });
+  const shopRes = await fetch(BASE + "/api/shop/streak-freeze", {
+    method: "POST",
+    headers: { cookie: sessionCookie },
+  });
   const shopBody = (await shopRes.json()) as { streakFreezes?: number; error?: string };
   if (shopRes.ok) {
     expect(
@@ -231,6 +268,21 @@ async function main() {
     const afterL3 = await api<UserState>("/api/user");
     expect(afterL3.xp > final.xp, `L3 lesson XP awarded (${final.xp} -> ${afterL3.xp})`);
   }
+
+  // --- 6. phone viewport: bottom tab bar navigates the app
+  const mobileContext = await browser.newContext({ viewport: { width: 360, height: 800 } });
+  await mobileContext.addCookies([{ name: "lingoduo_session", value: sessionToken, url: BASE }]);
+  const mobilePage = await mobileContext.newPage();
+  await mobilePage.goto(BASE + "/learn");
+  await mobilePage.getByText("Daily quests").waitFor({ timeout: 15000 });
+  const bottomNav = mobilePage.getByRole("navigation", { name: "Primary" });
+  expect(await bottomNav.isVisible(), "mobile bottom nav visible at 360px");
+  await mobilePage.screenshot({ path: `${SHOTS}/mobile-learn.png` });
+  await bottomNav.getByRole("link", { name: "Profile" }).click();
+  await mobilePage.getByText("E2E Runner").waitFor({ timeout: 10000 });
+  expect(true, "mobile profile shows the logged-in user");
+  await mobilePage.screenshot({ path: `${SHOTS}/mobile-profile.png` });
+  await mobileContext.close();
 
   await browser.close();
   if (failures.length) {
