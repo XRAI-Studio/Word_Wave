@@ -45,3 +45,6 @@ next-env.d.ts
 /prisma/dev.db-journal
 /prisma/*.db-shm
 /prisma/*.db-wal
+
+# e2e screenshots
+/*.png
