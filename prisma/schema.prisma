@@ -12,6 +12,7 @@ model User {
   passwordHash     String?
   googleId         String?  @unique
   displayName      String?
+  isGuest          Boolean  @default(false)
   createdAt        DateTime @default(now())
   hearts           Int      @default(5)
   xp               Int      @default(0)

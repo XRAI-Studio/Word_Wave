@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LessonPath, type UnitData } from "@/components/learn/lesson-path";
+import { InstallPrompt } from "@/components/install-prompt";
 import { QuestsCard } from "@/components/quests-card";
 
 interface SectionData {
@@ -38,6 +39,7 @@ export default function LearnPage() {
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-24">
       <QuestsCard />
+      <InstallPrompt />
       {data ? (
         data.sections.map((section, si) => (
           <section key={section.id} className="mt-10">

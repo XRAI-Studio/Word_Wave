@@ -36,6 +36,25 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       .catch(() => {});
   }, []);
 
+  async function playAsGuest() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/auth/guest", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setError(data?.error ?? "Something went wrong — please try again.");
+        return;
+      }
+      router.push("/learn");
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the server — please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -120,18 +139,35 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         </ChunkyButton>
       </form>
 
-      {googleEnabled && (
+      {(googleEnabled || mode === "login") && (
         <div className="mt-4 w-full max-w-sm">
           <div className="flex items-center gap-3 py-2 text-xs font-bold uppercase tracking-wide text-ink-soft">
             <span className="h-px flex-1 bg-line" aria-hidden /> or
             <span className="h-px flex-1 bg-line" aria-hidden />
           </div>
-          <a
-            href="/api/auth/google"
-            className="block w-full rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-3 text-center font-display font-bold hover:bg-paper"
-          >
-            Continue with Google
-          </a>
+          {googleEnabled && (
+            <a
+              href="/api/auth/google"
+              className="block w-full rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-3 text-center font-display font-bold hover:bg-paper"
+            >
+              Continue with Google
+            </a>
+          )}
+          {mode === "login" && (
+            <>
+              <button
+                type="button"
+                onClick={playAsGuest}
+                disabled={busy}
+                className="mt-3 block w-full rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-3 text-center font-display font-bold hover:bg-paper disabled:opacity-60"
+              >
+                Try it without an account
+              </button>
+              <p className="mt-2 text-center text-xs text-ink-soft">
+                Progress isn&apos;t saved in guest mode.
+              </p>
+            </>
+          )}
         </div>
       )}
 

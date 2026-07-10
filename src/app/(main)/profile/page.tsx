@@ -113,10 +113,17 @@ export default function ProfilePage() {
         />
       </div>
 
-      <p className="mt-6 text-center text-sm text-ink-soft">
-        Your progress is saved to this profile — log in on any device to pick up where you left
-        off.
-      </p>
+      {user.isGuest ? (
+        <p className="mt-6 rounded-2xl border-2 border-saffron-deep/40 bg-white px-4 py-3 text-center text-sm font-semibold text-ink-soft">
+          Guest session — your progress is deleted when you log out. Create an account to keep
+          your progress next time.
+        </p>
+      ) : (
+        <p className="mt-6 text-center text-sm text-ink-soft">
+          Your progress is saved to this profile — log in on any device to pick up where you left
+          off.
+        </p>
+      )}
 
       <ChunkyButton
         variant="danger"

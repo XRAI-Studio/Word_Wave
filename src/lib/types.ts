@@ -71,6 +71,7 @@ export interface UserDTO {
   id: string;
   email: string | null;
   displayName: string | null;
+  isGuest: boolean;
   createdAt: string;
   xp: number;
   streakCount: number;
