@@ -44,7 +44,6 @@ export async function POST(req: Request) {
     },
   });
 
-  // Reviews never cost hearts.
   const rewards = results.length
     ? await applyCompletionRewards({
         userId,
@@ -64,7 +63,6 @@ export async function POST(req: Request) {
     xpEarned,
     xp: updated.xp,
     streakCount: updated.streakCount,
-    hearts: updated.hearts,
     gems: updated.gems,
     gemsEarned: rewards.gemsEarned,
     questsCompleted: rewards.questsCompleted,

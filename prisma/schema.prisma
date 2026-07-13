@@ -14,11 +14,9 @@ model User {
   displayName      String?
   isGuest          Boolean  @default(false)
   createdAt        DateTime @default(now())
-  hearts           Int      @default(5)
   xp               Int      @default(0)
   streakCount      Int      @default(0)
   lastActiveDate   String? // YYYY-MM-DD of last lesson/review completion
-  heartsUpdatedAt  DateTime @default(now())
   gems             Int      @default(0)
   streakFreezes    Int      @default(0)
   lessonsCompleted Int      @default(0)

@@ -28,7 +28,7 @@ type Challenge = {
   };
 };
 
-type UserState = { xp: number; streakCount: number; hearts: number; gems: number; streakFreezes: number };
+type UserState = { xp: number; streakCount: number; gems: number; streakFreezes: number };
 
 async function api<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path, { headers: { cookie: sessionCookie } });
@@ -171,17 +171,7 @@ async function main() {
   const after = await api<UserState>("/api/user");
   expect(after.xp === before.xp + 20, `lesson XP +20 (${before.xp} -> ${after.xp})`);
   expect(after.streakCount >= 1, `streak alive (got ${after.streakCount})`);
-  expect(
-    after.hearts === Math.max(0, before.hearts - 1),
-    `mistake cost a heart (${before.hearts} -> ${after.hearts})`
-  );
   expect(after.gems > before.gems, `lesson gems awarded (${before.gems} -> ${after.gems})`);
-
-  const questsNow = await api<{ quests: { progress: number; completed: boolean }[] }>("/api/quests");
-  expect(
-    questsNow.quests.some((q) => q.progress > 0 || q.completed),
-    "daily quest progress advanced"
-  );
 
   const unitsAfter = await api<{ activeLessonId: string | null }>("/api/units");
   expect(
@@ -221,7 +211,15 @@ async function main() {
   const final = await api<UserState>("/api/user");
   expect(final.xp > after.xp, `review XP awarded (${after.xp} -> ${final.xp})`);
   expect(final.gems > after.gems, `review gems awarded (${after.gems} -> ${final.gems})`);
-  expect(final.hearts === after.hearts, `review costs no hearts (still ${final.hearts})`);
+
+  // Checked after both a lesson and a review: every possible daily-quest
+  // window (date-hashed from the pool) contains at least one quest kind
+  // that one of those two activities advances.
+  const questsNow = await api<{ quests: { progress: number; completed: boolean }[] }>("/api/quests");
+  expect(
+    questsNow.quests.some((q) => q.progress > 0 || q.completed),
+    "daily quest progress advanced"
+  );
 
   // --- 4b. streak-freeze shop honors its contract either way
   const shopRes = await fetch(BASE + "/api/shop/streak-freeze", {

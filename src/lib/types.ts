@@ -76,7 +76,6 @@ export interface UserDTO {
   xp: number;
   streakCount: number;
   lastActiveDate: string | null;
-  hearts: number;
   gems: number;
   streakFreezes: number;
   lessonsCompleted: number;

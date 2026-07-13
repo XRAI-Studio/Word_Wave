@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Heart, X } from "lucide-react";
+import { X } from "lucide-react";
 import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
 import { FillBlank } from "@/components/quiz/fill-blank";
@@ -32,7 +32,6 @@ interface Rewards {
   xpEarned: number;
   xp: number;
   streakCount: number;
-  hearts: number;
   gems: number;
   gemsEarned: number;
   questsCompleted: { key: string; title: string; gems: number }[];
@@ -51,7 +50,7 @@ export function Quiz({
   lessonId?: string;
 }) {
   const router = useRouter();
-  const { hydrate, applyRewards, hearts: heartsAtStart, hydrated } = useGameStore();
+  const { hydrate, applyRewards } = useGameStore();
 
   const [queue, setQueue] = useState(challenges);
   const [idx, setIdx] = useState(0);
@@ -149,7 +148,6 @@ export function Quiz({
       applyRewards({
         xp: data.xp,
         streakCount: data.streakCount,
-        hearts: data.hearts,
         gems: data.gems,
       });
       const attempts = [...firstTry.current.values()];
@@ -222,13 +220,6 @@ export function Quiz({
             style={{ width: `${progress}%` }}
           />
         </div>
-        {mode === "lesson" && hydrated && (
-          <span className="flex items-center gap-1.5 font-display font-bold text-heart" title="Hearts">
-            <Heart className="size-5 fill-current" aria-hidden />
-            {Math.max(0, heartsAtStart - mistakes)}
-            <span className="sr-only">hearts left</span>
-          </span>
-        )}
       </div>
 
       {/* challenge */}

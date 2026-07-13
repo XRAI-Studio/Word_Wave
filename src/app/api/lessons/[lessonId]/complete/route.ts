@@ -2,13 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import {
-  MAX_HEARTS,
-  nextStreak,
-  todayStr,
-  XP_PER_LESSON,
-  XP_PERFECT_BONUS,
-} from "@/lib/gamification";
+import { nextStreak, todayStr, XP_PER_LESSON, XP_PERFECT_BONUS } from "@/lib/gamification";
 import { applyCompletionRewards } from "@/lib/rewards";
 import { applySrsResults } from "@/lib/review-service";
 import { getUserState } from "@/lib/user-service";
@@ -64,18 +58,12 @@ export async function POST(
   const firstActivityToday = user.lastActiveDate !== todayStr(now);
   const streakCount = nextStreak(user.lastActiveDate, user.streakCount, now);
 
-  // Soft hearts: mistakes cost hearts (floored at 0) but never block anything.
-  // user.hearts is already regen-adjusted by getUserState; restart the regen
-  // timer when a full set takes its first loss.
-  const hearts = Math.max(0, user.hearts - mistakes);
   await db.user.update({
     where: { id: userId },
     data: {
       xp: { increment: xpEarned },
       streakCount,
       lastActiveDate: todayStr(now),
-      hearts,
-      ...(user.hearts >= MAX_HEARTS && hearts < MAX_HEARTS ? { heartsUpdatedAt: now } : {}),
     },
   });
 
@@ -96,7 +84,6 @@ export async function POST(
     xpEarned,
     xp: updated.xp,
     streakCount: updated.streakCount,
-    hearts: updated.hearts,
     gems: updated.gems,
     gemsEarned: rewards.gemsEarned,
     questsCompleted: rewards.questsCompleted,
