@@ -1,5 +1,5 @@
-/* One-off generator for PWA icons: renders the LingoDuo mark (rounded brand
- * square with a white "L") at the sizes Android/Chrome and iOS expect.
+/* One-off generator for PWA icons: renders the WordWave mark (rounded brand
+ * square with a white "W") at the sizes Android/Chrome and iOS expect.
  * Run: npx tsx scripts/gen-icons.ts
  */
 import path from "node:path";
@@ -16,7 +16,7 @@ function svg(size: number, opts: { radius: number; pad: number }) {
   <rect y="${size * 0.9}" width="${size}" height="${size * 0.1}" rx="${opts.radius / 3}" fill="${BRAND_DEEP}"/>
   <text x="50%" y="54%" dominant-baseline="central" text-anchor="middle"
         font-family="Arial, Helvetica, sans-serif" font-weight="800"
-        font-size="${glyphSize * 0.72}" fill="#ffffff">L</text>
+        font-size="${glyphSize * 0.6}" fill="#ffffff">W</text>
 </svg>`);
 }
 
