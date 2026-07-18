@@ -84,7 +84,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-10">
       <Link href="/" className="font-display text-3xl font-extrabold text-brand">
-        LingoDuo
+        WordWave
       </Link>
       <h1 className="mt-6 font-display text-xl font-extrabold">
         {mode === "login" ? "Welcome back" : "Create your profile"}
@@ -174,7 +174,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <p className="mt-8 text-sm text-ink-soft">
         {mode === "login" ? (
           <>
-            New to LingoDuo?{" "}
+            New to WordWave?{" "}
             <Link href="/register" className="font-bold text-brand hover:underline">
               Create an account
             </Link>

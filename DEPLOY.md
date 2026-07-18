@@ -1,4 +1,4 @@
-# Deploying LingoDuo to Hostinger (Business plan)
+# Deploying WordWave to Hostinger (Business plan)
 
 The Business plan runs Node.js web apps (up to 5 per account) with GitHub
 auto-deploy, hPanel environment variables, SSH access, and free SSL — all of

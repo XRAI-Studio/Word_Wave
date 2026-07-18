@@ -18,8 +18,8 @@ export function Sidebar() {
   return (
     <aside className="hidden sm:flex flex-col gap-2 border-r border-line bg-white px-3 py-6 w-16 lg:w-56 shrink-0">
       <Link href="/learn" className="mb-6 px-2 font-display text-2xl font-extrabold text-brand">
-        <span className="lg:hidden">L</span>
-        <span className="hidden lg:inline">LingoDuo</span>
+        <span className="lg:hidden">W</span>
+        <span className="hidden lg:inline">WordWave</span>
       </Link>
       {items.map(({ href, label, icon: Icon }) => {
         const active = pathname.startsWith(href);

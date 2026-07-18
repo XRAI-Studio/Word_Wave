@@ -24,7 +24,7 @@ export function TopBar({ courseStats }: { courseStats: CourseStats }) {
     <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur px-4 py-3">
       <div className="flex items-center justify-between">
         <Link href="/learn" className="sm:invisible font-display text-xl font-extrabold text-brand">
-          LingoDuo
+          WordWave
         </Link>
         <div
           className={cn(

@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "LingoDuo — Learn Spanish",
-    short_name: "LingoDuo",
+    name: "WordWave — Learn Spanish",
+    short_name: "WordWave",
     description: "Lessons, streaks, and spaced repetition — five minutes at a time.",
     start_url: "/learn",
     display: "standalone",

@@ -1,4 +1,4 @@
-# LingoDuo
+# WordWave
 
 A local-first language learning app inspired by Duolingo. Everything runs on your machine: the course, your progress, and the spaced-repetition schedule live in a local SQLite file — no accounts, no network.
 

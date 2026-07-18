@@ -19,10 +19,10 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "LingoDuo — learn Spanish, five minutes at a time",
+  title: "WordWave — learn Spanish, five minutes at a time",
   description: "Lessons, streaks, and spaced repetition — on your phone or PC.",
-  applicationName: "LingoDuo",
-  appleWebApp: { capable: true, statusBarStyle: "default", title: "LingoDuo" },
+  applicationName: "WordWave",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "WordWave" },
   icons: {
     icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],

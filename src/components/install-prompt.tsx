@@ -58,7 +58,7 @@ export function InstallPrompt() {
       <div className="flex items-center gap-3">
         <Smartphone className="size-8 shrink-0 text-brand" aria-hidden />
         <div className="min-w-0">
-          <p className="font-display font-extrabold">Install LingoDuo</p>
+          <p className="font-display font-extrabold">Install WordWave</p>
           <p className="text-sm text-ink-soft">Add it to your home screen and play like an app.</p>
         </div>
       </div>
