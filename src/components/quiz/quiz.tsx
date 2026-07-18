@@ -17,12 +17,17 @@ import { cn } from "@/lib/utils";
 type Status = "answering" | "correct" | "wrong" | "submitting" | "done";
 
 // Forgiving comparison for typed answers: case-, accent-, and
-// punctuation-insensitive ("como estas" matches "¿cómo estás?").
+// punctuation-insensitive ("como estas" matches "¿cómo estás?"). Latin display
+// conventions are also folded — j→i and v→u — so a learner typing "Iulius" or
+// "uita" is accepted for displayed "Jūlius"/"vīta" (macrons already strip via
+// NFD). Folding is applied to both sides, so it only broadens acceptance.
 function normalizeTyped(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
+    .replace(/j/g, "i")
+    .replace(/v/g, "u")
     .replace(/[^a-z0-9ñ\s]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -44,10 +49,12 @@ export function Quiz({
   challenges,
   mode,
   lessonId,
+  labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" },
 }: {
   challenges: ChallengeDTO[];
   mode: "lesson" | "review";
   lessonId?: string;
+  labels?: { correct: string; celebrate: string };
 }) {
   const router = useRouter();
   const { hydrate, applyRewards } = useGameStore();
@@ -183,6 +190,7 @@ export function Quiz({
         gemsEarned={rewards.gemsEarned}
         questsCompleted={rewards.questsCompleted}
         achievementsUnlocked={rewards.achievementsUnlocked}
+        celebrateLabel={labels.celebrate}
       />
     );
   }
@@ -278,7 +286,7 @@ export function Quiz({
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 py-4">
           <div aria-live="polite" className="font-display font-bold">
             {(status === "correct" || status === "submitting") && (
-              <span className="text-verde-deep">¡Correcto!</span>
+              <span className="text-verde-deep">{labels.correct}</span>
             )}
             {status === "wrong" && (
               <span className="text-heart-deep">

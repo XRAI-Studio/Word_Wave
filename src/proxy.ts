@@ -28,6 +28,7 @@ export const config = {
     "/awards",
     "/profile",
     "/lesson/:path*",
+    "/welcome",
     "/login",
     "/register",
   ],

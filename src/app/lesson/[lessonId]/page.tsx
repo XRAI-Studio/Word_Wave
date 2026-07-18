@@ -8,6 +8,7 @@ interface LessonResponse {
   id: string;
   title: string;
   unitTitle: string;
+  labels: { correct: string; celebrate: string };
   challenges: ChallengeDTO[];
 }
 
@@ -34,5 +35,7 @@ export default function LessonPage({ params }: { params: Promise<{ lessonId: str
     );
   }
 
-  return <Quiz challenges={lesson.challenges} mode="lesson" lessonId={lesson.id} />;
+  return (
+    <Quiz challenges={lesson.challenges} mode="lesson" lessonId={lesson.id} labels={lesson.labels} />
+  );
 }

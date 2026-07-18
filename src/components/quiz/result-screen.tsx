@@ -11,6 +11,7 @@ export function ResultScreen({
   gemsEarned,
   questsCompleted,
   achievementsUnlocked,
+  celebrateLabel = "¡Muy bien!",
 }: {
   xpEarned: number;
   streak: number;
@@ -18,12 +19,13 @@ export function ResultScreen({
   gemsEarned: number;
   questsCompleted: { key: string; title: string; gems: number }[];
   achievementsUnlocked: { key: string; title: string; description: string }[];
+  celebrateLabel?: string;
 }) {
   const router = useRouter();
 
   return (
     <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-10 text-center">
-      <h1 className="font-display text-3xl font-extrabold text-verde">¡Muy bien!</h1>
+      <h1 className="font-display text-3xl font-extrabold text-verde">{celebrateLabel}</h1>
       <p className="mt-1 text-ink-soft">Session complete</p>
 
       <div className="mt-8 grid w-full max-w-md grid-cols-2 gap-3 sm:grid-cols-4">

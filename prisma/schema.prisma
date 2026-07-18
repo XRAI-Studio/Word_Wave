@@ -23,6 +23,11 @@ model User {
   perfectLessons   Int      @default(0)
   reviewsCompleted Int      @default(0)
 
+  // Which course the learner is currently on. Null for brand-new users, who
+  // are sent to the first-run picker before reaching the app. XP/streak/gems
+  // and the counters above stay account-wide (shared across courses).
+  activeCourseId String?
+
   lessonProgress LessonProgress[]
   wordReviews    WordReview[]
   questProgress  QuestProgress[]
@@ -60,8 +65,30 @@ model Achievement {
   @@unique([userId, key])
 }
 
+// A learnable language course. The app ships Spanish (grandfathered content
+// IDs) and Classical Latin. Progress (LessonProgress / WordReview) is per
+// course by virtue of course-scoped content IDs + route gating.
+model Course {
+  id                 String  @id
+  code               String  @unique // "es", "la" — stable lookup key used by the seed and active-course APIs
+  name               String // display name, e.g. "Spanish"
+  promptLanguageName String // fills "Type the {X} for …" prompts, e.g. "Spanish" / "Latin"
+  emblem             String // short emblem string for the swap control (flag / SPQR)
+  order              Int
+  correctLabel       String // per-answer affirmation, e.g. "¡Correcto!" / "Rēctē!"
+  celebrateLabel     String // end-of-session celebration, e.g. "¡Muy bien!" / "Euge!"
+  isAvailable        Boolean @default(true) // dev-only/fixture courses set this false; hidden from the picker/switch in production
+
+  sections Section[]
+  words    Word[]
+}
+
 model Section {
-  id          String @id @default(cuid())
+  id          String  @id @default(cuid())
+  courseId    String
+  course      Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  level       Int     @default(1) // 1/2/3 — persisted so /api/units and layout can work structurally
+  fillBlank   Boolean @default(false) // Level-3 typed-answer sections
   title       String
   description String
   order       Int
@@ -101,9 +128,13 @@ model Challenge {
 
 model Word {
   id          String       @id @default(cuid())
-  term        String       @unique // Spanish
+  courseId    String
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  term        String // term in the course's target language
   translation String // English
   reviews     WordReview[]
+
+  @@unique([courseId, term])
 }
 
 model LessonProgress {

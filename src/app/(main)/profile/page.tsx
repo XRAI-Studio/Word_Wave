@@ -26,6 +26,7 @@ function StatTile({
 export default function ProfilePage() {
   const [user, setUser] = useState<UserDTO | null>(null);
   const [achievementCount, setAchievementCount] = useState(0);
+  const [courseName, setCourseName] = useState<string | null>(null);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export default function ProfilePage() {
     fetch("/api/achievements")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d: { unlocked: unknown[] }) => setAchievementCount(d.unlocked.length))
+      .catch(() => {});
+    fetch("/api/courses")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d: { activeCourseCode: string | null; courses: { code: string; name: string }[] }) =>
+        setCourseName(d.courses.find((c) => c.code === d.activeCourseCode)?.name ?? null)
+      )
       .catch(() => {});
   }, []);
 
@@ -76,7 +83,9 @@ export default function ProfilePage() {
             {user.displayName ?? "Learner"}
           </h1>
           {user.email && <p className="truncate text-sm text-ink-soft">{user.email}</p>}
-          <p className="text-xs text-ink-soft">Learning Spanish since {memberSince}</p>
+          <p className="text-xs text-ink-soft">
+            Learning {courseName ?? "a language"} since {memberSince}
+          </p>
         </div>
       </div>
 

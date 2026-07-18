@@ -36,6 +36,16 @@ async function api<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function postApi<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", cookie: sessionCookie },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 // Greedy left-to-right reconstruction of the sentence from bank tokens.
 function tokenize(answer: string, bank: string[]): string[] {
   const tokens: string[] = [];
@@ -88,6 +98,12 @@ function escapeRe(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Wait for the end-of-session result screen using a course-agnostic anchor
+// (the celebration text is localized per course, so we don't assert on it).
+async function sessionComplete(page: Page) {
+  await page.getByRole("button", { name: "Back to the path" }).waitFor({ timeout: 10000 });
+}
+
 async function main() {
   const browser = await chromium.launch();
   const failures: string[] = [];
@@ -126,7 +142,15 @@ async function main() {
   await context.addCookies([{ name: "lingoduo_session", value: sessionToken, url: BASE }]);
   const page = await context.newPage();
 
-  // --- 0. where are we starting from?
+  // --- 0. new users have no active course (they hit the first-run picker);
+  // /api/units is gated until one is chosen. Pick Spanish, like the picker does.
+  const noCourse = await fetch(BASE + "/api/units", { headers: { cookie: sessionCookie } });
+  expect(noCourse.status === 409, `units gated before course pick (got ${noCourse.status})`);
+  const picked = await postApi<{ activeCourseCode: string }>("/api/course/active", {
+    courseCode: "es",
+  });
+  expect(picked.activeCourseCode === "es", `picked Spanish course (got ${picked.activeCourseCode})`);
+
   const before = await api<UserState>("/api/user");
   expect(before.xp === 0, `fresh user starts at 0 XP (got ${before.xp})`);
   const course = await api<{
@@ -164,7 +188,7 @@ async function main() {
   for (const ch of lesson.challenges.slice(1)) await solveChallenge(page, ch, false);
   await solveChallenge(page, lesson.challenges[0], false); // re-queued missed card
 
-  await page.getByText("¡Muy bien!").waitFor({ timeout: 10000 });
+  await sessionComplete(page);
   await page.screenshot({ path: `${SHOTS}/result.png` });
 
   // --- 3. server state moved
@@ -206,7 +230,7 @@ async function main() {
     .getByRole("heading", { name: review.challenges[0].prompt })
     .waitFor({ timeout: 10000 });
   for (const ch of review.challenges) await solveChallenge(page, ch, false);
-  await page.getByText("¡Muy bien!").waitFor({ timeout: 10000 });
+  await sessionComplete(page);
 
   const final = await api<UserState>("/api/user");
   expect(final.xp > after.xp, `review XP awarded (${after.xp} -> ${final.xp})`);
@@ -239,20 +263,21 @@ async function main() {
     );
   }
 
-  // --- 5. Level 3 lesson: typed answers (FILL_BLANK) end-to-end
+  // --- 5. fill-blank (Level 3) lesson: typed answers end-to-end. Select the
+  // section STRUCTURALLY via the fillBlank metadata, not by a title string.
   const fullCourse = await api<{
-    sections: { title: string; units: { lessons: { id: string }[] }[] }[];
+    sections: { fillBlank: boolean; units: { lessons: { id: string }[] }[] }[];
   }>("/api/units");
-  const l3Section = fullCourse.sections.find((s) => s.title.includes("Level 3"));
-  if (!l3Section) {
-    expect(false, "a Level 3 section exists");
+  const fbSection = fullCourse.sections.find((s) => s.fillBlank);
+  if (!fbSection) {
+    expect(false, "a fill-blank (Level 3) section exists");
   } else {
-    const l3LessonId = l3Section.units[0].lessons[0].id;
+    const l3LessonId = fbSection.units[0].lessons[0].id;
     const l3Lesson = await api<{ challenges: Challenge[] }>(`/api/lessons/${l3LessonId}`);
     expect(
       l3Lesson.challenges.some((c) => c.type === "FILL_BLANK") &&
         l3Lesson.challenges.every((c) => c.type !== "MULTIPLE_CHOICE"),
-      "L3 lesson uses FILL_BLANK instead of MULTIPLE_CHOICE"
+      "fill-blank lesson uses FILL_BLANK instead of MULTIPLE_CHOICE"
     );
 
     await page.goto(`${BASE}/lesson/${l3LessonId}`);
@@ -261,11 +286,55 @@ async function main() {
       .waitFor({ timeout: 10000 });
     await page.screenshot({ path: `${SHOTS}/fill-blank.png` });
     for (const ch of l3Lesson.challenges) await solveChallenge(page, ch, false);
-    await page.getByText("¡Muy bien!").waitFor({ timeout: 10000 });
+    await sessionComplete(page);
 
     const afterL3 = await api<UserState>("/api/user");
-    expect(afterL3.xp > final.xp, `L3 lesson XP awarded (${final.xp} -> ${afterL3.xp})`);
+    expect(afterL3.xp > final.xp, `fill-blank lesson XP awarded (${final.xp} -> ${afterL3.xp})`);
   }
+
+  // --- 5b. second course (Latin): switch, drive a Latin lesson, and confirm
+  // XP is shared account-wide while path progress stays siloed per course.
+  const esActiveBefore = (await api<{ activeLessonId: string | null }>("/api/units")).activeLessonId;
+  const xpBeforeLatin = (await api<UserState>("/api/user")).xp;
+
+  const toLatin = await postApi<{ activeCourseCode: string }>("/api/course/active", {
+    courseCode: "la",
+  });
+  expect(toLatin.activeCourseCode === "la", `switched to Latin (got ${toLatin.activeCourseCode})`);
+
+  const latin = await api<{
+    activeLessonId: string | null;
+    course: { code: string };
+  }>("/api/units");
+  expect(latin.course.code === "la", `units now serve Latin (got ${latin.course.code})`);
+  expect(latin.activeLessonId !== null, "Latin course has a startable lesson");
+
+  if (latin.activeLessonId) {
+    const latinLesson = await api<{ challenges: Challenge[] }>(
+      `/api/lessons/${latin.activeLessonId}`
+    );
+    await page.goto(`${BASE}/lesson/${latin.activeLessonId}`);
+    await page
+      .getByRole("heading", { name: latinLesson.challenges[0].prompt })
+      .waitFor({ timeout: 10000 });
+    await page.screenshot({ path: `${SHOTS}/latin.png` });
+    for (const ch of latinLesson.challenges) await solveChallenge(page, ch, false);
+    await sessionComplete(page);
+
+    const xpAfterLatin = (await api<UserState>("/api/user")).xp;
+    expect(xpAfterLatin > xpBeforeLatin, `Latin lesson shares XP (${xpBeforeLatin} -> ${xpAfterLatin})`);
+  }
+
+  // switch back to Spanish: its path position is exactly where we left it.
+  await postApi("/api/course/active", { courseCode: "es" });
+  const esAfter = await api<{ activeLessonId: string | null; course: { code: string } }>(
+    "/api/units"
+  );
+  expect(esAfter.course.code === "es", `switched back to Spanish (got ${esAfter.course.code})`);
+  expect(
+    esAfter.activeLessonId === esActiveBefore,
+    `Spanish path unaffected by Latin (${esActiveBefore} vs ${esAfter.activeLessonId})`
+  );
 
   // --- 6. phone viewport: bottom tab bar navigates the app
   const mobileContext = await browser.newContext({ viewport: { width: 360, height: 800 } });

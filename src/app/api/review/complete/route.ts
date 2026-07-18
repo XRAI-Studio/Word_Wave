@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { courseErrorResponse, requireActiveCourse } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { nextStreak, todayStr, XP_PER_REVIEW_WORD } from "@/lib/gamification";
 import { applyCompletionRewards } from "@/lib/rewards";
@@ -12,9 +12,13 @@ const bodySchema = z.object({
 });
 
 export async function POST(req: Request) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  let sessionUser, course;
+  try {
+    ({ user: sessionUser, course } = await requireActiveCourse());
+  } catch (err) {
+    const mapped = courseErrorResponse(err);
+    if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    throw err;
   }
   const userId = sessionUser.id;
 
@@ -22,7 +26,17 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { results } = parsed.data;
+
+  // Drop any results for words outside the active course before touching SRS.
+  const owned = new Set(
+    (
+      await db.word.findMany({
+        where: { courseId: course.id, id: { in: parsed.data.results.map((r) => r.wordId) } },
+        select: { id: true },
+      })
+    ).map((w) => w.id)
+  );
+  const results = parsed.data.results.filter((r) => owned.has(r.wordId));
 
   const user = await getUserState(userId);
   const now = new Date();

@@ -19,7 +19,7 @@ const nunito = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "WordWave — learn Spanish, five minutes at a time",
+  title: "WordWave — learn a language, five minutes at a time",
   description: "Lessons, streaks, and spaced repetition — on your phone or PC.",
   applicationName: "WordWave",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "WordWave" },

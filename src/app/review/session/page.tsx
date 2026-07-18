@@ -5,13 +5,20 @@ import Link from "next/link";
 import { Quiz } from "@/components/quiz/quiz";
 import type { ChallengeDTO } from "@/lib/types";
 
+type Labels = { correct: string; celebrate: string };
+const DEFAULT_LABELS: Labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" };
+
 export default function ReviewSessionPage() {
   const [challenges, setChallenges] = useState<ChallengeDTO[] | null>(null);
+  const [labels, setLabels] = useState<Labels>(DEFAULT_LABELS);
 
   useEffect(() => {
     fetch("/api/review")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => setChallenges(d.challenges))
+      .then((d) => {
+        setChallenges(d.challenges);
+        if (d.labels) setLabels(d.labels);
+      })
       .catch(() => setChallenges([]));
   }, []);
 
@@ -37,5 +44,5 @@ export default function ReviewSessionPage() {
     );
   }
 
-  return <Quiz challenges={challenges} mode="review" />;
+  return <Quiz challenges={challenges} mode="review" labels={labels} />;
 }

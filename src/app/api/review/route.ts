@@ -1,25 +1,30 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { courseErrorResponse, requireActiveCourse } from "@/lib/auth";
 import { db } from "@/lib/db";
 import type { ChallengeDTO } from "@/lib/types";
 
 const SESSION_CAP = 10;
 
-// Words due for review, synthesized into multiple-choice challenges.
+// Words due for review in the active course, synthesized into MC challenges.
 export async function GET() {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  let user, course;
+  try {
+    ({ user, course } = await requireActiveCourse());
+  } catch (err) {
+    const mapped = courseErrorResponse(err);
+    if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    throw err;
   }
 
+  // Only words in the active course are due / eligible — never mix courses.
   const due = await db.wordReview.findMany({
-    where: { userId: sessionUser.id, dueAt: { lte: new Date() } },
+    where: { userId: user.id, dueAt: { lte: new Date() }, word: { courseId: course.id } },
     orderBy: { dueAt: "asc" },
     include: { word: true },
   });
 
   const session = due.slice(0, SESSION_CAP);
-  const allWords = await db.word.findMany();
+  const allWords = await db.word.findMany({ where: { courseId: course.id } });
 
   const challenges: ChallengeDTO[] = session.map((review, i) => {
     const others = allWords.filter((w) => w.id !== review.wordId);
@@ -53,7 +58,11 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ dueCount: due.length, challenges });
+  return NextResponse.json({
+    dueCount: due.length,
+    labels: { correct: course.correctLabel, celebrate: course.celebrateLabel },
+    challenges,
+  });
 }
 
 function shuffle<T>(arr: T[], salt: number): T[] {

@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { courseErrorResponse, requireActiveCourse } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-// Sections + units + lessons + completion state; drives the learn path screen.
+// Sections + units + lessons + completion state for the active course; drives
+// the learn path screen.
 export async function GET() {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  let user, course;
+  try {
+    ({ user, course } = await requireActiveCourse());
+  } catch (err) {
+    const mapped = courseErrorResponse(err);
+    if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    throw err;
   }
 
   const [sections, progress] = await Promise.all([
     db.section.findMany({
+      where: { courseId: course.id },
       orderBy: { order: "asc" },
       include: {
         units: {
@@ -21,7 +27,7 @@ export async function GET() {
         },
       },
     }),
-    db.lessonProgress.findMany({ where: { userId: sessionUser.id, completed: true } }),
+    db.lessonProgress.findMany({ where: { userId: user.id, completed: true } }),
   ]);
 
   const completedIds = new Set(progress.map((p) => p.lessonId));
@@ -41,10 +47,13 @@ export async function GET() {
 
   return NextResponse.json({
     activeLessonId,
+    course: { code: course.code, name: course.name },
     sections: sections.map((section) => ({
       id: section.id,
       title: section.title,
       description: section.description,
+      level: section.level,
+      fillBlank: section.fillBlank,
       units: section.units.map((unit) => ({
         id: unit.id,
         title: unit.title,

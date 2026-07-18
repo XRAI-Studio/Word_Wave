@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getSessionUser } from "@/lib/auth";
+import { courseErrorResponse, requireActiveCourse } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { nextStreak, todayStr, XP_PER_LESSON, XP_PERFECT_BONUS } from "@/lib/gamification";
 import { applyCompletionRewards } from "@/lib/rewards";
@@ -17,11 +17,15 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ lessonId: string }> }
 ) {
-  const sessionUser = await getSessionUser();
-  if (!sessionUser) {
-    return NextResponse.json({ error: "Not logged in" }, { status: 401 });
+  let user, course;
+  try {
+    ({ user, course } = await requireActiveCourse());
+  } catch (err) {
+    const mapped = courseErrorResponse(err);
+    if (mapped) return NextResponse.json({ error: mapped.error }, { status: mapped.status });
+    throw err;
   }
-  const userId = sessionUser.id;
+  const userId = user.id;
 
   const { lessonId } = await params;
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
@@ -30,13 +34,40 @@ export async function POST(
   }
   const { failedWordIds, correctWordIds, mistakes } = parsed.data;
 
-  const lesson = await db.lesson.findUnique({ where: { id: lessonId } });
-  if (!lesson) {
+  // Gate the lesson to the active course. This is also the race guard: if the
+  // learner switched course mid-lesson, the lesson no longer matches the active
+  // course and completion is rejected (no award under the wrong course).
+  const lesson = await db.lesson.findUnique({
+    where: { id: lessonId },
+    include: { unit: { select: { section: { select: { courseId: true } } } } },
+  });
+  if (!lesson || lesson.unit.section.courseId !== course.id) {
     return NextResponse.json({ error: "Lesson not found" }, { status: 404 });
   }
 
-  const user = await getUserState(userId);
+  // Only feed the SRS with words that actually belong to the active course —
+  // never let a client mutate another course's review schedule.
+  const submittedIds = [...new Set([...failedWordIds, ...correctWordIds])];
+  const owned = new Set(
+    (
+      await db.word.findMany({
+        where: { courseId: course.id, id: { in: submittedIds } },
+        select: { id: true },
+      })
+    ).map((w) => w.id)
+  );
+  const failed = failedWordIds.filter((id) => owned.has(id));
+  const correct = correctWordIds.filter((id) => owned.has(id));
+
+  const state = await getUserState(userId);
   const now = new Date();
+
+  // Award XP/gems/streak only on the first completion of this lesson; replays
+  // still refresh the SRS but don't double-award.
+  const existing = await db.lessonProgress.findUnique({
+    where: { userId_lessonId: { userId, lessonId } },
+  });
+  const firstCompletion = !existing?.completed;
 
   await db.lessonProgress.upsert({
     where: { userId_lessonId: { userId, lessonId } },
@@ -47,16 +78,29 @@ export async function POST(
   await applySrsResults(
     userId,
     [
-      ...failedWordIds.map((wordId) => ({ wordId, correct: false })),
-      ...correctWordIds.map((wordId) => ({ wordId, correct: true })),
+      ...failed.map((wordId) => ({ wordId, correct: false })),
+      ...correct.map((wordId) => ({ wordId, correct: true })),
     ],
     now
   );
 
-  const perfect = mistakes === 0 && failedWordIds.length === 0;
+  if (!firstCompletion) {
+    const current = await db.user.findUniqueOrThrow({ where: { id: userId } });
+    return NextResponse.json({
+      xpEarned: 0,
+      xp: current.xp,
+      streakCount: current.streakCount,
+      gems: current.gems,
+      gemsEarned: 0,
+      questsCompleted: [],
+      achievementsUnlocked: [],
+    });
+  }
+
+  const perfect = mistakes === 0 && failed.length === 0;
   const xpEarned = XP_PER_LESSON + (perfect ? XP_PERFECT_BONUS : 0);
-  const firstActivityToday = user.lastActiveDate !== todayStr(now);
-  const streakCount = nextStreak(user.lastActiveDate, user.streakCount, now);
+  const firstActivityToday = state.lastActiveDate !== todayStr(now);
+  const streakCount = nextStreak(state.lastActiveDate, state.streakCount, now);
 
   await db.user.update({
     where: { id: userId },
