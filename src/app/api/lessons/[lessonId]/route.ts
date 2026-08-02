@@ -34,6 +34,7 @@ export async function GET(
     id: lesson.id,
     title: lesson.title,
     unitTitle: lesson.unit.title,
+    courseCode: course.code,
     labels: { correct: course.correctLabel, celebrate: course.celebrateLabel },
     challenges: lesson.challenges.map(parseChallenge),
   });

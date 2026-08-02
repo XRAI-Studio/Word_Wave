@@ -11,6 +11,7 @@ const DEFAULT_LABELS: Labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!
 export default function ReviewSessionPage() {
   const [challenges, setChallenges] = useState<ChallengeDTO[] | null>(null);
   const [labels, setLabels] = useState<Labels>(DEFAULT_LABELS);
+  const [courseCode, setCourseCode] = useState<string | undefined>();
 
   useEffect(() => {
     fetch("/api/review")
@@ -18,6 +19,7 @@ export default function ReviewSessionPage() {
       .then((d) => {
         setChallenges(d.challenges);
         if (d.labels) setLabels(d.labels);
+        if (d.courseCode) setCourseCode(d.courseCode);
       })
       .catch(() => setChallenges([]));
   }, []);
@@ -44,5 +46,5 @@ export default function ReviewSessionPage() {
     );
   }
 
-  return <Quiz challenges={challenges} mode="review" labels={labels} />;
+  return <Quiz challenges={challenges} mode="review" labels={labels} courseCode={courseCode} />;
 }

@@ -11,27 +11,11 @@ import { MultipleChoice } from "@/components/quiz/multiple-choice";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { Translate } from "@/components/quiz/translate";
 import { useGameStore } from "@/lib/store";
+import { normalizeTyped } from "@/lib/course-policy";
 import type { ChallengeDTO } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Status = "answering" | "correct" | "wrong" | "submitting" | "done";
-
-// Forgiving comparison for typed answers: case-, accent-, and
-// punctuation-insensitive ("como estas" matches "¿cómo estás?"). Latin display
-// conventions are also folded — j→i and v→u — so a learner typing "Iulius" or
-// "uita" is accepted for displayed "Jūlius"/"vīta" (macrons already strip via
-// NFD). Folding is applied to both sides, so it only broadens acceptance.
-function normalizeTyped(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/j/g, "i")
-    .replace(/v/g, "u")
-    .replace(/[^a-z0-9ñ\s]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 interface Rewards {
   xpEarned: number;
@@ -50,11 +34,15 @@ export function Quiz({
   mode,
   lessonId,
   labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" },
+  courseCode,
 }: {
   challenges: ChallengeDTO[];
   mode: "lesson" | "review";
   lessonId?: string;
   labels?: { correct: string; celebrate: string };
+  /** Selects the typed-answer policy (diacritic + j/v handling). Falls back to
+   *  Spanish, matching the default labels above. */
+  courseCode?: string;
 }) {
   const router = useRouter();
   const { hydrate, applyRewards } = useGameStore();
@@ -122,8 +110,8 @@ export function Quiz({
       const expected = [
         current.correctAnswer,
         current.correctAnswer.replace(/\([^)]*\)/g, ""),
-      ].map(normalizeTyped);
-      if (expected.includes(normalizeTyped(fbValue))) handleCorrect();
+      ].map((answer) => normalizeTyped(answer, courseCode));
+      if (expected.includes(normalizeTyped(fbValue, courseCode))) handleCorrect();
       else handleWrong();
     }
   }
