@@ -49,9 +49,34 @@ Add a single **`requireActiveCourse()`** server helper (alongside the existing `
 18. Course-aware copy: `manifest.ts`, root `layout.tsx` title, `profile/page.tsx` ("Learning {language} since…"), and quiz/result feedback strings read from the active course instead of hardcoded Spanish.
 
 ### Latin curriculum shape (grammar-sequenced, same counts)
-- **Level 1** (10 sections / ~86 units): 1st & 2nd declension nouns, nominative/accusative, `sum`, 1st/2nd conjugation present; concrete vocab (people, family, home, nature, food).
-- **Level 2** (10 / 80): 3rd declension, dative/ablative/genitive, 3rd/4th conjugation, adjective agreement, prepositions.
-- **Level 3** (10 / 80, `fillBlank`): imperfect/perfect, pronouns, subordinate clauses — **reusing only L1/L2 vocab** (enforced by `validate()`), so L3 authoring depends on L1+L2 vocab being final.
+
+> **Revised 2026-08-01 after the Level 1 grammar review.** Level 1 was authored broader than
+> this section originally specified — it teaches the ablative, all prepositions, adjective
+> agreement, and a handful of 3rd/4th-declension nouns and 3rd/4th-conjugation verbs, which
+> were originally assigned to Level 2. That was reviewed and **accepted**: withholding the
+> ablative and prepositions leaves Level 1 unable to express much, and mainstream beginner
+> courses introduce them early too. The Level 2 spec below has been rewritten to **build on**
+> Level 1 rather than re-teach it. The grammar review found no case, agreement, or verb-ending
+> errors in Level 1's 258 sentences.
+
+- **Level 1** (10 sections / 86 units) — **as built**: 1st & 2nd declension nouns (m/f/n),
+  nominative + accusative + ablative, `sum`, adjective agreement (1st/2nd declension),
+  prepositions with the accusative and with the ablative, present tense **3rd person only**
+  (singular and plural), plurals, numbers 1–10, adverbs and coordinating conjunctions.
+  Vocabulary is concrete (people, home, nature, food, war, town, school). A few
+  3rd/4th-declension nouns and 3rd/4th-conjugation verbs appear as unanalysed whole words.
+- **Level 2** (10 / 80) — everything Level 1 left untouched:
+  - **The 3rd declension taught systematically** (consonant stems, i-stems, neuters), turning
+    L1's memorised `arbor`/`mōns`/`rēx`/`pāx`/`mare` into an understood pattern; then the
+    4th and 5th declensions.
+  - **Genitive and dative** — the two cases L1 never uses at all.
+  - **1st and 2nd person verbs** — L1 is entirely 3rd person, so `sum/es/est`, `-ō/-s/-t`,
+    `-mus/-tis/-nt` across all four conjugations is new ground, as is the systematic
+    treatment of 3rd/4th conjugation.
+  - Comparative and superlative adjectives; adverb formation; the remaining prepositions.
+- **Level 3** (10 / 80, `fillBlank`): imperfect/perfect/future tenses, personal and relative
+  pronouns, subordinate clauses — **reusing only L1/L2 vocab** (enforced by `validate()`), so
+  L3 authoring depends on L1+L2 vocab being final.
 
 ## Phasing
 

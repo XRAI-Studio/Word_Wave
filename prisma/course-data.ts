@@ -14,7 +14,7 @@
 import { level1Sections } from "./course-data-level1";
 import { level2Sections } from "./course-data-level2";
 import { level3Sections } from "./course-data-level3";
-import { latinFixtureSections } from "./course-data-latin-fixture";
+import { latinLevel1Sections } from "./course-data-latin-level1";
 import type { CourseDef, SectionDef } from "./course-types";
 
 export type { WordDef, SentenceDef, UnitDef, SectionDef, CourseDef } from "./course-types";
@@ -50,8 +50,10 @@ export const courses: CourseDef[] = [
     order: 2,
     correctLabel: "Rēctē!",
     celebrateLabel: "Euge!",
-    isAvailable: false, // dev/e2e fixture only until Phase 1b
-    sections: latinFixtureSections,
+    // Phase 1b: Latin Level 1 is live. Grammar-reviewed 2026-08-01 (all 86
+    // units; no case, agreement or verb-ending errors found — see PLAN.md).
+    isAvailable: true,
+    sections: latinLevel1Sections,
   },
 ];
 
