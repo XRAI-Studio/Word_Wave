@@ -3,12 +3,12 @@
 The Business plan runs Node.js web apps (up to 5 per account) with GitHub
 auto-deploy, hPanel environment variables, SSH access, and free SSL — all of
 which this app uses. These steps assume the repo
-`alexandermacscott-del/lingoduo` and a domain managed in hPanel.
+`XRAI-Studio/Word_Wave` and a domain managed in hPanel.
 
 ## 1. Create the Node.js app
 
 1. hPanel → **Websites** → your domain → **Node.js** (Web Apps).
-2. Choose **Deploy from GitHub** and connect `alexandermacscott-del/lingoduo`,
+2. Choose **Deploy from GitHub** and connect `XRAI-Studio/Word_Wave`,
    branch `master`, with automatic deploys on push.
 3. Framework: Hostinger should auto-detect **Next.js** (build `next build`,
    start `next start`). Set the **Node version to 24**.
@@ -18,7 +18,7 @@ which this app uses. These steps assume the repo
 | Name | Value | Notes |
 | --- | --- | --- |
 | `NODE_ENV` | `production` | enables secure cookies |
-| `DATABASE_PATH` | `/home/<hosting-user>/lingoduo-data/lingoduo.db` | **must be outside the deploy directory** so the database survives redeploys |
+| `DATABASE_PATH` | `/home/<hosting-user>/wordwave-data/wordwave.db` | **must be outside the deploy directory** so the database survives redeploys |
 | `APP_URL` | `https://yourdomain.com` | used for Google OAuth redirects |
 | `GOOGLE_CLIENT_ID` | from Google Cloud Console | optional — omit to hide the Google button |
 | `GOOGLE_CLIENT_SECRET` | from Google Cloud Console | optional |
@@ -28,10 +28,10 @@ which this app uses. These steps assume the repo
 SSH is included in the Business plan (hPanel → Advanced → SSH Access).
 
 ```bash
-mkdir -p ~/lingoduo-data
+mkdir -p ~/wordwave-data
 cd ~/domains/yourdomain.com/nodejs   # the deployed app directory
-DATABASE_PATH=~/lingoduo-data/lingoduo.db npm run db:deploy   # apply migrations
-DATABASE_PATH=~/lingoduo-data/lingoduo.db npm run db:seed     # load the course
+DATABASE_PATH=~/wordwave-data/wordwave.db npm run db:deploy   # apply migrations
+DATABASE_PATH=~/wordwave-data/wordwave.db npm run db:seed     # load the course
 ```
 
 Re-run `db:deploy` after any deploy that includes a new migration; `db:seed`
@@ -71,3 +71,19 @@ included in the plan:
 
 Everything else (auth, rewards, course content) is database-agnostic through
 Prisma.
+
+## 6. Publish it to the MacScott showcase
+
+The repo carries a `macscott.json` and is public, so once the app is live it
+only needs a URL and the catalog topic:
+
+1. Add `"liveUrl": "https://yourdomain.com"` to `macscott.json` on `master`.
+   Leave `"embeddable": false` as it is -- WordWave signs users in, and browsers
+   partition cookies for a cross-site iframe, so a login inside the showcase's
+   embedded frame would produce a broken session. The orb launches it in a new
+   tab instead.
+2. Add the catalog topic: `gh api -X PUT repos/XRAI-Studio/Word_Wave/topics -f names[]=macscott-app`
+3. Refresh the catalog immediately instead of waiting for the hourly cycle:
+   `curl -X POST https://scott.macscott.net/api/revalidate -H "Authorization: Bearer $REVALIDATE_SECRET"`
+
+`owner` is `both`, so the orb appears on Scott's and Alexander's sites.
