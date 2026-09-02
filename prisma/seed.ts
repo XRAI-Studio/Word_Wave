@@ -3,10 +3,9 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { courses, type CourseDef } from "./course-data";
 import { buildCourse, makeCtx } from "./course-build";
+import { resolveDbPath } from "../src/lib/db-path";
 
-const dbFile = process.env.DATABASE_PATH
-  ? path.resolve(process.env.DATABASE_PATH)
-  : path.join(__dirname, "dev.db");
+const dbFile = resolveDbPath(process.env.DATABASE_PATH, path.join(__dirname, "dev.db"));
 const db = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${dbFile}` }) });
 
 // Course content lives in ./course-data.ts; ./course-build.ts compiles it into

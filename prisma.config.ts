@@ -7,7 +7,7 @@ export const DB_FILE = resolveDbPath(process.env.DATABASE_PATH, path.join(__dirn
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
-    seed: "tsx prisma/seed.ts",
+    seed: "npx -y tsx prisma/seed.ts",
   },
   datasource: {
     url: `file:${DB_FILE}`,
