@@ -18,10 +18,17 @@ which this app uses. These steps assume the repo
 | Name | Value | Notes |
 | --- | --- | --- |
 | `NODE_ENV` | `production` | enables secure cookies |
-| `DATABASE_PATH` | `/home/<hosting-user>/wordwave-data/wordwave.db` | **must be outside the deploy directory** so the database survives redeploys |
+| `DATABASE_PATH` | `/home/<hosting-user>/wordwave-data/wordwave.db` | **must be outside the deploy directory** so the database survives redeploys. A leading `~` is expanded, so `~/wordwave-data/wordwave.db` works too |
 | `APP_URL` | `https://yourdomain.com` | used for Google OAuth redirects |
 | `GOOGLE_CLIENT_ID` | from Google Cloud Console | optional — omit to hide the Google button |
 | `GOOGLE_CLIENT_SECRET` | from Google Cloud Console | optional |
+
+> **Set `DATABASE_PATH` before the first deploy, not after.** The build script
+> runs `prisma migrate deploy && prisma db seed`, so migrations happen at build
+> time. With the variable unset the build silently falls back to `prisma/dev.db`
+> *inside* the deploy directory: the app still starts, but its database is
+> replaced on every redeploy.
+
 
 ## 3. First-time database setup (SSH)
 
