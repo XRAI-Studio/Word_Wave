@@ -72,6 +72,8 @@ export interface UserDTO {
   email: string | null;
   displayName: string | null;
   isGuest: boolean;
+  // False for guests and Google-only accounts, which have no password to change.
+  hasPassword: boolean;
   createdAt: string;
   xp: number;
   streakCount: number;

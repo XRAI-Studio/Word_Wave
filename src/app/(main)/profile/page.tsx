@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Award, BookOpen, Flame, Gem, LogOut, Snowflake, Zap } from "lucide-react";
+import { ChangePasswordForm } from "@/components/change-password-form";
 import { ChunkyButton } from "@/components/chunky-button";
 import type { UserDTO } from "@/lib/types";
 
@@ -133,6 +134,8 @@ export default function ProfilePage() {
           off.
         </p>
       )}
+
+      {user.hasPassword && <ChangePasswordForm />}
 
       <ChunkyButton
         variant="danger"

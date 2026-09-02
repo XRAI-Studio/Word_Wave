@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:backup": "node scripts/backup-db.mjs",
     "db:audit": "tsx scripts/audit-courses.ts",
     "lock:check": "tsx scripts/spanish-lock.ts",
     "lock:update": "tsx scripts/spanish-lock.ts --update",

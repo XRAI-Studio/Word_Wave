@@ -30,6 +30,7 @@ export async function getUserState(userId: string, now = new Date()): Promise<Us
     email: user.email,
     displayName: user.displayName,
     isGuest: user.isGuest,
+    hasPassword: Boolean(user.passwordHash),
     createdAt: user.createdAt.toISOString(),
     lessonsCompleted: user.lessonsCompleted,
     xp: user.xp,

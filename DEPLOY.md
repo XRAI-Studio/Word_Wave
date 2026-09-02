@@ -94,3 +94,47 @@ only needs a URL and the catalog topic:
    `curl -X POST https://scott.macscott.net/api/revalidate -H "Authorization: Bearer $REVALIDATE_SECRET"`
 
 `owner` is `both`, so the orb appears on Scott's and Alexander's sites.
+
+## 7. Automatic database backups
+
+The database holds real accounts and progress, and it is a single file. Back it
+up on a schedule.
+
+```bash
+# hPanel -> Advanced -> Cron Jobs. Daily at 03:15.
+cd ~/domains/yourdomain.com/nodejs && DATABASE_PATH=/home/<hosting-user>/wordwave-data/wordwave.db node scripts/backup-db.mjs
+```
+
+**Set `DATABASE_PATH` inline in the cron line as shown.** Cron does not inherit
+the environment variables you set in hPanel for the web app. The script refuses
+to run without it rather than guessing, precisely so a misconfigured job fails
+loudly instead of quietly backing up an empty database for months.
+
+Each run writes `wordwave-<timestamp>.db` to `~/wordwave-backups`, then verifies
+the copy: it reopens it, runs `PRAGMA integrity_check`, and counts users and
+challenges. A copy that cannot be opened is reported as a failure, so a green
+run means a restorable file, not merely a file. Copies are made with SQLite's
+online backup API, which is consistent even if someone is mid-lesson -- unlike
+`cp`, which can capture a torn database.
+
+Override `BACKUP_DIR` to write elsewhere, and `KEEP` to change how many are kept
+(default 14; the oldest are pruned).
+
+Check it after the first firing:
+
+```bash
+ls -lh ~/wordwave-backups
+```
+
+### Restoring
+
+```bash
+# 1. Stop the app in hPanel first, so nothing is mid-write.
+cp ~/wordwave-data/wordwave.db ~/wordwave-data/wordwave.db.before-restore
+cp ~/wordwave-backups/wordwave-<timestamp>.db ~/wordwave-data/wordwave.db
+# 2. Start the app again.
+```
+
+Keep the `.before-restore` copy until you have confirmed the restore is good.
+Progress made between the backup and the restore is lost -- that gap is the
+backup interval, which is why daily is the minimum sensible schedule.
