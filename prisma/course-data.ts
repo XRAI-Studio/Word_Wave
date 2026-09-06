@@ -5,8 +5,8 @@
 //   Level 2 (10 sections)    — harder material on the same themes
 //   Level 3 (10 sections)    — typed-answer reinforcement of all L1+L2 vocab
 //
-// Latin (course "la"): a DEV-ONLY fixture (isAvailable: false) proving the
-//   two-course pipeline; replaced by full grammar-verified content in Phase 1b.
+// Latin (course "la"): Level 1 (10 sections), live since Phase 1b and
+//   grammar-reviewed 2026-08-01.
 //
 // Content lives in the course-data-*.ts files; shared shapes and authoring
 // rules live in course-types.ts.
