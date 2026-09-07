@@ -9,7 +9,7 @@ which this app uses. These steps assume the repo
 
 1. hPanel → **Websites** → your domain → **Node.js** (Web Apps).
 2. Choose **Deploy from GitHub** and connect `XRAI-Studio/Word_Wave`,
-   branch `main`, with automatic deploys on push.
+   branch `master`, with automatic deploys on push.
 3. Framework: Hostinger should auto-detect **Next.js** (build `next build`,
    start `next start`). Set the **Node version to 24**.
 
@@ -84,7 +84,7 @@ Prisma.
 The repo carries a `macscott.json` and is public, so once the app is live it
 only needs a URL and the catalog topic:
 
-1. Add `"liveUrl": "https://yourdomain.com"` to `macscott.json` on `main`.
+1. Add `"liveUrl": "https://yourdomain.com"` to `macscott.json` on `master`.
    Leave `"embeddable": false` as it is -- WordWave signs users in, and browsers
    partition cookies for a cross-site iframe, so a login inside the showcase's
    embedded frame would produce a broken session. The orb launches it in a new
