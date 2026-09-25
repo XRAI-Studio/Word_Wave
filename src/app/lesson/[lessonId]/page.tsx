@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
@@ -14,7 +15,16 @@ interface LessonResponse {
   challenges: ChallengeDTO[];
 }
 
+// A submission kept across a portal sign-in is resolved before the lesson loads.
 export default function LessonPage({ params }: { params: Promise<{ lessonId: string }> }) {
+  return (
+    <PendingRecovery mode="lesson">
+      <LessonLoader params={params} />
+    </PendingRecovery>
+  );
+}
+
+function LessonLoader({ params }: { params: Promise<{ lessonId: string }> }) {
   const { lessonId } = use(params);
   const [lesson, setLesson] = useState<LessonResponse | null>(null);
   const [error, setError] = useState(false);

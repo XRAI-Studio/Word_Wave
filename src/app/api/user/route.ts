@@ -26,6 +26,7 @@ export async function GET() {
     createdAt: user.createdAt.toISOString(),
     lessonsCompleted,
     activeCourseName: course?.name ?? null,
+    activeCourseCode: course?.code ?? null,
     ...(isMockSession()
       ? { devTotals: mockPortal().totals(user.id), devSummary: mockPortal().summary(user.id) }
       : {}),

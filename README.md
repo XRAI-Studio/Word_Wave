@@ -115,8 +115,9 @@ Database changes are applied by hand, never at build time:
 psql "$POSTGRES_URL_NON_POOLING" -v wordwave_password="..." -f docs/db/wordwave-role.sql
 # after a schema change, and after a course-content change
 MIGRATE_DATABASE_URL="<session pooler, port 5432, wordwave_app>" npm run db:deploy
-MIGRATE_DATABASE_URL="<same>" DATABASE_URL="<same>" npm run db:seed
+MIGRATE_DATABASE_URL="<same>" npm run db:seed
 ```
 
-The session pooler is used for migrations because the direct `db.*.supabase.co` host is
-IPv6-only. Supabase's backups cover the database.
+Migrations, the seed and `npm run db:audit` all use `MIGRATE_DATABASE_URL` when it is set
+and `DATABASE_URL` otherwise (`src/lib/db-url.ts`). The session pooler is used for them
+because the direct `db.*.supabase.co` host is IPv6-only. Supabase's backups cover the database.

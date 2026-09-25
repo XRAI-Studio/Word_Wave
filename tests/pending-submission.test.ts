@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasPendingFor,
   PENDING_KEY,
   savePending,
   takePending,
@@ -62,5 +63,14 @@ describe("pending submission (work order criterion 21, WW-P5-007)", () => {
     const s = new Mem();
     s.setItem(PENDING_KEY, "{not json");
     expect(takePending(s, { path: "/lesson/L1", userId: "learner-a", courseCode: "es" })).toBeNull();
+  });
+
+  it("reports whether a submission waits for a route without removing it", () => {
+    const s = new Mem();
+    expect(hasPendingFor(s, "/lesson/L1")).toBe(false);
+    savePending(s, p);
+    expect(hasPendingFor(s, "/lesson/L1")).toBe(true);
+    expect(hasPendingFor(s, "/review/session")).toBe(false);
+    expect(s.getItem(PENDING_KEY)).not.toBeNull();
   });
 });

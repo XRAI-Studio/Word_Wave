@@ -154,3 +154,67 @@ Builder: Claude (host). Pre-build commit `a70ebfa`.
   409 with no write, review → one 10 XP award, expired session → portal login with the
   lesson as `next`, nothing saved, kept submission sent once on return and awarded, no
   resubmission on reload, summary revisions increase across the Latin switch).
+
+### Production database and deploy
+
+- Production seeded as `wordwave_app` through the session pooler after the TLS fix: 2
+  courses, 40 sections, 332 units, 996 lessons, 4,648 challenges, 1,290 words (221 s).
+- Runtime probe through the **transaction** pooler (6543) as `wordwave_app` with the
+  verified TLS config: counts, repeated same-shape queries, four parallel queries, and an
+  interactive transaction with `createMany({ skipDuplicates })` then a deliberate
+  rollback (nothing left behind). No prepared-statement errors.
+- Vercel project `wordwave` (`prj_IHHLhBoQcofA7ooEQUlFxj5JFBd4`): created, linked,
+  git-connected to `XRAI-Studio/Word_Wave`; Framework Preset set to `nextjs` through the
+  REST API (the CLI created it as "Other"; the Vercel MCP connection could not see this
+  team), Root `.`, Production Branch `master`; env (Production) `NEXT_PUBLIC_SUPABASE_URL`,
+  `SUPABASE_ANON_KEY`, `DATABASE_URL` (sensitive); domain `wordwave.travelschooling.com`.
+- Pushed `master` at `e90bcac`. Deployment `wordwave-di1gz66yo` Ready in 57 s; CI `verify`
+  run 36193432163 success.
+- Live (criterion 30): `/`, `/learn`, `/manifest.webmanifest`, `/prisma/schema.prisma`,
+  `/PLAN.md` → 307 to `https://class.travelschooling.com/login?next=<url>`; the four
+  headers plus Vercel HSTS; `/api/user` → 401 `{"error":"Not signed in"}`;
+  `/icon-192.png` 200.
+- Old address (criterion 31): Hostinger's auto-deploy rebuilt `master` within minutes;
+  `https://scottmacscott.com/`, `/learn` and `https://www.scottmacscott.com/` answer 308 to
+  the same path on `https://wordwave.travelschooling.com` (`platform: hostinger`).
+- Portal: `wordwave` pending flag removed from `scripts/check-dns.mjs`; `npm run dns:check`
+  all seven hosts ok; `tests/dns-guard.test.ts` updated (no pending host; the pending
+  mechanism still tested on a table that marks one).
+
+## Inspection 1 — Codex (REVISE, 6 medium, 2 low)
+
+Runner result `claudex-runs/claudex-ge6n5dna/result.json`, fresh session
+`01a0da94-4115-7e83-bf57-37e3e46eaf61`, base `a70ebfa`, inspected tree `e90bcac`; CLI
+default model (`gpt-6-astra` / `high`); usage 1,603,206 input (1,387,648 cached), 6,546
+output; 249 s. All eight accepted; fix round 1:
+
+- **WW-INSPECT-001** the review award counted submitted in-course results, not applied
+  ones: a correct answer for an unscheduled word earned XP. *Fixed:* `applySrsResults`
+  returns the number of words it scheduled; the route awards on that and reports it in
+  `p_detail.words`. Unit test (`tests/review-service.test.ts`) and e2e ("a correct answer
+  for an unscheduled word is not a review").
+- **WW-INSPECT-002** a failed resend of a kept submission fell into ordinary quiz
+  advancement on an empty quiz. *Fixed:* recovery moved out of the quiz into
+  `PendingRecovery`; a failed send shows "Couldn't save your answers yet" with Try again,
+  which resends the exact payload (kept in state and re-stored for a reload). e2e: a 500
+  on the resend, then Try again → awarded and saved.
+- **WW-INSPECT-003** recovery ran only if the quiz mounted (no due reviews, or a lesson
+  404 after a course switch, meant no send and no discard). *Fixed:* `PendingRecovery`
+  wraps both quiz routes and resolves the submission first, against `/api/user`'s new
+  `activeCourseCode`. e2e: a kept review is sent with nothing due; a kept Spanish lesson
+  is discarded while Latin is active and never replays after switching back.
+- **WW-INSPECT-004** SRS read-modify-write could lose a result when two submissions for
+  the same learner touched one word. *Fixed:* every completion transaction first takes
+  `SELECT ... FOR UPDATE` on the learner's `User` row, so they serialise per learner.
+  e2e: a lesson (word correct) and a review (same word wrong) sent concurrently keep the
+  miss (lapses + 1). The e2e passing does not prove the race was hit on this run; the
+  lock is what guarantees it.
+- **WW-INSPECT-005/006/008** the seed and audit used `DATABASE_URL` while migrations used
+  `MIGRATE_DATABASE_URL`, an empty template value blocked the fallback, and the audit
+  never loaded `.env`. *Fixed:* `src/lib/db-url.ts` (`toolDatabaseUrl`, blank = unset;
+  `loadLocalEnv`) shared by `prisma.config.ts`, the seed and the audit
+  (`tests/db-url.test.ts`); README "Deploy" updated.
+- **WW-INSPECT-007** `.env.example` was git-ignored by `.env*`. *Fixed:* `!.env.example`.
+
+Proofs after the fix round: `npm run verify` 15 files / 87 tests; Spanish lock OK;
+grading checks passed. `npm run e2e`: 68 checks passed (26 in part a, 42 in part b).

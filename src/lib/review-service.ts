@@ -6,7 +6,7 @@ export interface WordResult {
   correct: boolean;
 }
 
-// Apply SRS results to WordReview rows. Failed words without a review row get
+// Apply SRS results to WordReview rows and return how many words were scheduled. Failed words without a review row get
 // one (they enter the review rotation); correct words only update existing rows.
 // Runs on the caller's client: the completion routes pass their transaction so the
 // progress transition and these writes commit together (work order criterion 14).
@@ -15,7 +15,7 @@ export async function applySrsResults(
   userId: string,
   results: WordResult[],
   now = new Date()
-) {
+): Promise<number> {
   // Last result wins if a word appears multiple times in one session... unless
   // it was ever wrong, in which case wrong wins (Duolingo re-queues misses).
   const merged = new Map<string, boolean>();
@@ -23,6 +23,7 @@ export async function applySrsResults(
     merged.set(r.wordId, (merged.get(r.wordId) ?? true) && r.correct);
   }
 
+  let applied = 0;
   for (const [wordId, correct] of merged) {
     const existing = await db.wordReview.findUnique({
       where: { userId_wordId: { userId, wordId } },
@@ -34,6 +35,7 @@ export async function applySrsResults(
         where: { id: existing.id },
         data: { ...next },
       });
+      applied++;
     } else if (!correct) {
       const word = await db.word.findUnique({ where: { id: wordId } });
       if (!word) continue; // unknown word id — ignore rather than fail the request
@@ -43,6 +45,10 @@ export async function applySrsResults(
         data: [{ userId, wordId, ...initialFailedState(now) }],
         skipDuplicates: true,
       });
+      applied++;
     }
   }
+  // Words the SRS actually scheduled: a correct answer for a word with no review row
+  // changes nothing and must not count as reviewed (review award, WW-INSPECT-001).
+  return applied;
 }

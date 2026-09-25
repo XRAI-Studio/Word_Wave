@@ -1,8 +1,11 @@
 import { courses, type CourseDef } from "./course-data";
 import { buildCourse, makeCtx } from "./course-build";
 import { createDbClient } from "../src/lib/db";
+import { loadLocalEnv, toolDatabaseUrl } from "../src/lib/db-url";
 
-const db = createDbClient();
+// By hand only: the same URL the migrations use (README "Deploy").
+loadLocalEnv();
+const db = createDbClient(toolDatabaseUrl());
 
 // Course content lives in ./course-data.ts; ./course-build.ts compiles it into
 // rows (pure, no I/O); this file writes those rows.

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
@@ -9,7 +10,16 @@ import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 type Labels = { correct: string; celebrate: string };
 const DEFAULT_LABELS: Labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" };
 
+// A submission kept across a portal sign-in is resolved before the review loads.
 export default function ReviewSessionPage() {
+  return (
+    <PendingRecovery mode="review">
+      <ReviewLoader />
+    </PendingRecovery>
+  );
+}
+
+function ReviewLoader() {
   const [challenges, setChallenges] = useState<ChallengeDTO[] | null>(null);
   const [labels, setLabels] = useState<Labels>(DEFAULT_LABELS);
   const [courseCode, setCourseCode] = useState<string | undefined>();

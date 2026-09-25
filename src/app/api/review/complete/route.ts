@@ -38,14 +38,15 @@ export async function POST(req: Request) {
   );
   const results = parsed.data.results.filter((r) => owned.has(r.wordId));
 
-  await completeReview(user.id, results);
+  const applied = await completeReview(user.id, results);
 
-  // One `review_session` award per session, not per word (seed: 10 XP, 5 a day).
+  // One `review_session` award per session, not per word (seed: 10 XP, 5 a day), and
+  // only when the SRS scheduled something (WW-INSPECT-001).
   const portal = portalFor();
   const who = { token, userId: user.id };
   let award: AwardOutcome = SKIPPED;
-  if (shouldAwardReview(results.length)) {
-    award = awardOutcome(await portal.award(who, "review_session", { words: results.length, course: course.code }));
+  if (shouldAwardReview(applied)) {
+    award = awardOutcome(await portal.award(who, "review_session", { words: applied, course: course.code }));
     await publishSummary(portal, who);
   }
 

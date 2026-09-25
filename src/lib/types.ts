@@ -73,6 +73,7 @@ export interface UserDTO {
   createdAt: string;
   lessonsCompleted: number;
   activeCourseName: string | null;
+  activeCourseCode: string | null;
   /** Present only in the dev mock session (work order criterion 20). */
   devTotals?: { xp: number; gems: number; level: number; streak: number };
   /** The launcher summary the mock portal holds; dev mock session only. */

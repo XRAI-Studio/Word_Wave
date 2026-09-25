@@ -1,9 +1,21 @@
-import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
+import { db, DB_SCHEMA } from "@/lib/db";
 import { launcherSummary } from "@/lib/completion";
 import { applySrsResults, type WordResult } from "@/lib/review-service";
 import type { Learner, LauncherSummary, PortalClient } from "@/lib/portal";
 
 const TX = { timeout: 15_000, maxWait: 5_000 };
+
+/**
+ * Serialises one learner's progress writes (WW-INSPECT-004): the SRS reads a word's
+ * schedule and writes a new one, so two overlapping submissions touching the same word
+ * (a lesson and a review, or two lessons) could each read the old state and the later
+ * write would erase the earlier result. Every completion transaction takes this row lock
+ * first, in the same order, so they run one after another per learner.
+ */
+async function lockLearner(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM ${Prisma.raw(`"${DB_SCHEMA}"."User"`)} WHERE id = ${userId} FOR UPDATE`;
+}
 
 /**
  * Marks a lesson complete and applies its SRS results in one transaction. The first
@@ -18,6 +30,7 @@ export async function completeLesson(
   now = new Date()
 ): Promise<{ firstCompletion: boolean }> {
   return db.$transaction(async (tx) => {
+    await lockLearner(tx, userId);
     const inserted = await tx.lessonProgress.createMany({
       data: [{ userId, lessonId, completed: true, completedAt: now }],
       skipDuplicates: true,
@@ -31,9 +44,12 @@ export async function completeLesson(
   }, TX);
 }
 
-/** Applies a review session's SRS results. */
-export async function completeReview(userId: string, results: WordResult[], now = new Date()): Promise<void> {
-  await db.$transaction((tx) => applySrsResults(tx, userId, results, now), TX);
+/** Applies a review session's SRS results; returns how many words were actually scheduled. */
+export async function completeReview(userId: string, results: WordResult[], now = new Date()): Promise<number> {
+  return db.$transaction(async (tx) => {
+    await lockLearner(tx, userId);
+    return applySrsResults(tx, userId, results, now);
+  }, TX);
 }
 
 /**

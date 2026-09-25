@@ -389,11 +389,14 @@ async function learnerFlowInDevMode() {
       .waitFor({ timeout: 20_000 });
     check((await page.getByTestId("kit-failed").count()) === 0, "the review session loads directly");
 
-    // Lessons used below, by position after `first` (the active one): `second` for the
-    // concurrent completion, `third` for the expired session, `mismatchLesson` (six on)
-    // for the refused resubmission. They must stay distinct.
+    // Lessons used below, by position after `first` (the active one), all distinct:
+    // 1 concurrent completion, 2 expired session, 3 overlapping lesson and review,
+    // 4 failed resend and retry, 5 course-mismatch discard, 6 refused resubmission.
     const at = (n: number) => lessons[lessons.indexOf(first) + n];
-    const [second, third, mismatchLesson] = [at(1), at(2), at(6)];
+    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson] = [1, 2, 3, 4, 5, 6].map(at);
+    const setPending = (p: object) =>
+      page.evaluate((v) => sessionStorage.setItem("wordwave:pending-submission", JSON.stringify(v)), p);
+    const pendingStored = () => page.evaluate(() => sessionStorage.getItem("wordwave:pending-submission"));
 
     // --- concurrent double completion of a new lesson: one award
     const body = { failedWordIds: [], correctWordIds: [], mistakes: 0 };
@@ -424,6 +427,49 @@ async function learnerFlowInDevMode() {
     check((await resultStatus(page)) === "awarded", "review: award status awarded");
     me = await json<UserBody>("/api/user");
     check(me.devTotals?.xp === 30, `review earned one 10 XP award (xp ${me.devTotals?.xp})`);
+
+    // --- a review that schedules nothing earns nothing (WW-INSPECT-001)
+    const reviewed = new Set((await db.wordReview.findMany({ where: { userId: MOCK_USER } })).map((r) => r.wordId));
+    const unscheduled = (await db.word.findMany({ where: { courseId: "es" }, take: 50 })).find((w) => !reviewed.has(w.id))!;
+    const empty = await post<{ award: Award }>("/api/review/complete", { results: [{ wordId: unscheduled.id, correct: true }] });
+    check(empty.award.status === "skipped", `a correct answer for an unscheduled word is not a review (got ${empty.award.status})`);
+
+    // --- overlapping lesson and review with opposing results for one word (WW-INSPECT-004)
+    const word = missed[0].wordId;
+    const lapsesBefore = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    await Promise.all([
+      post(`/api/lessons/${overlapLesson.id}/complete`, { failedWordIds: [], correctWordIds: [word], mistakes: 0 }),
+      post("/api/review/complete", { results: [{ wordId: word, correct: false }] }),
+    ]);
+    const lapsesAfter = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    check(lapsesAfter === lapsesBefore + 1, `the concurrent miss is kept (lapses ${lapsesBefore} -> ${lapsesAfter})`);
+
+    // --- a kept review submission is sent even when nothing is due any more (WW-INSPECT-003)
+    await db.wordReview.updateMany({ where: { userId: MOCK_USER }, data: { dueAt: new Date(Date.now() + 86_400_000) } });
+    await page.goto(base + "/learn");
+    await setPending({
+      path: "/review/session",
+      url: "/api/review/complete",
+      body: { results: [{ wordId: word, correct: true }] },
+      userId: MOCK_USER,
+      courseCode: "es",
+      accuracy: 1,
+    });
+    await page.goto(base + "/review/session");
+    check((await resultStatus(page)) === "awarded", "a kept review is sent on return although nothing is due");
+    check((await pendingStored()) === null, "and removed once sent");
+
+    // --- a failed resend keeps the exact answers and retries them (WW-INSPECT-002)
+    const retryBody = { failedWordIds: [], correctWordIds: [], mistakes: 0 };
+    await setPending({ path: `/lesson/${retryLesson.id}`, url: `/api/lessons/${retryLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.route(`**/api/lessons/${retryLesson.id}/complete`, (route) => route.fulfill({ status: 500, body: "{}" }));
+    await page.goto(`${base}/lesson/${retryLesson.id}`);
+    await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
+    check((await pendingStored()) !== null, "a failed resend stays stored");
+    await page.unroute(`**/api/lessons/${retryLesson.id}/complete`);
+    await page.getByRole("button", { name: "Try again" }).click();
+    check((await resultStatus(page)) === "awarded", "Try again resends the kept answers");
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: retryLesson.id } })) === 1, "the retried lesson is saved");
 
     // --- expired session mid-lesson: redirect, keep, resubmit once after sign-in
     const thirdLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${third.id}`);
@@ -456,7 +502,19 @@ async function learnerFlowInDevMode() {
     check(me.devSummary?.summary.headline === "0 lessons done in Latin", `headline follows the switch (got ${me.devSummary?.summary.headline})`);
     const dbRev = (await db.user.findUniqueOrThrow({ where: { id: MOCK_USER } })).summaryRev;
     check(dbRev === me.devSummary?.rev, `the database revision matches the published one (${dbRev})`);
+
+    // --- a kept Spanish submission is discarded, not replayed, once the course is Latin
+    // (WW-INSPECT-003), even though the Spanish lesson no longer loads.
+    await page.goto(base + "/learn");
+    await setPending({ path: `/lesson/${otherCourseLesson.id}`, url: `/api/lessons/${otherCourseLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.goto(`${base}/lesson/${otherCourseLesson.id}`);
+    await page.getByText("This lesson doesn't exist.").waitFor({ timeout: 20_000 });
+    check((await pendingStored()) === null, "a submission for another course is discarded");
     await post("/api/course/active", { courseCode: "es" });
+    await page.goto(`${base}/lesson/${otherCourseLesson.id}`);
+    const otherLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${otherCourseLesson.id}`);
+    await page.getByRole("heading", { name: otherLesson.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: otherCourseLesson.id } })) === 0, "and never replays after switching back");
 
     await context.close();
   } finally {

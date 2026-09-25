@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -11,9 +11,10 @@ import { MultipleChoice } from "@/components/quiz/multiple-choice";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { Translate } from "@/components/quiz/translate";
 import { useKit } from "@/components/kit-provider";
-import { apiFetch, RedirectingError } from "@/lib/api-fetch";
+import { RedirectingError } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
-import { savePending, takePending, type PendingSubmission } from "@/lib/pending-submission";
+import type { PendingSubmission } from "@/lib/pending-submission";
+import { postCompletion } from "@/lib/submit-completion";
 import { useGameStore } from "@/lib/store";
 import { normalizeTyped } from "@/lib/course-policy";
 import type { ChallengeDTO } from "@/lib/types";
@@ -21,11 +22,6 @@ import { cn } from "@/lib/utils";
 
 type Status = "answering" | "correct" | "wrong" | "submitting" | "done";
 
-/** What both completion routes return (work order criterion 16). */
-interface CompletionResponse {
-  firstCompletion?: boolean;
-  award: AwardOutcome;
-}
 
 // Orchestrates a quiz session. Lesson mode marks the lesson complete;
 // review mode feeds the SRS directly.
@@ -61,22 +57,6 @@ export function Quiz({
   // wordId -> true only if never missed this session; challengeId -> first try correct
   const wordResults = useRef(new Map<string, boolean>());
   const firstTry = useRef(new Map<string, boolean>());
-
-  // A completion saved before a sign-in round trip (criterion 21): submit it once, only
-  // for the same learner and course, and show its result instead of a fresh quiz.
-  const replayed = useRef(false);
-  useEffect(() => {
-    if (replayed.current || !kit.user) return;
-    replayed.current = true;
-    const pending = takePending(window.sessionStorage, {
-      path: window.location.pathname,
-      userId: kit.user.id,
-      courseCode: courseCode ?? "",
-    });
-    if (pending) void submit(pending);
-    // Runs once per mount; `submit` only reads refs and stable setters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kit.user]);
 
   const current = queue[idx];
 
@@ -132,22 +112,13 @@ export function Quiz({
   async function submit(p: PendingSubmission) {
     setStatus("submitting");
     try {
-      const res = await apiFetch(
-        p.url,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-WordWave-Expect-User": p.userId },
-          body: JSON.stringify(p.body),
-        },
-        // Session expired mid-quiz: keep the answers for after the portal sign-in.
-        { beforeRedirect: () => savePending(window.sessionStorage, p) }
-      );
-      if (!res.ok) throw new Error(String(res.status));
-      const data: CompletionResponse = await res.json();
+      const data = await postCompletion(p);
       if (data.award.result) applyAward(data.award.result);
       setOutcome({ award: data.award, accuracy: p.accuracy });
       setStatus("done");
     } catch (err) {
+      // Session expired: postCompletion kept the answers and the browser is leaving for
+      // the portal; PendingRecovery sends them when this route loads again.
       if (err instanceof RedirectingError) return;
       toast.error("Couldn't save your progress. Check your connection and try again.");
       setStatus("correct"); // let the user hit Continue and retry

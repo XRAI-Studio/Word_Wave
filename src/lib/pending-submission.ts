@@ -41,6 +41,11 @@ function read(storage: StorageLike): PendingSubmission | null {
   }
 }
 
+/** Whether a submission is waiting for this route (no removal; decides if a check is needed). */
+export function hasPendingFor(storage: StorageLike, path: string): boolean {
+  return read(storage)?.path === path;
+}
+
 /**
  * Returns the stored submission for this route when it belongs to this learner and
  * course, removing it either way it is decided: taken to submit, or discarded because

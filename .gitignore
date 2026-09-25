@@ -51,3 +51,4 @@ next-env.d.ts
 
 # local Postgres (npm run db:dev)
 /.pgdata
+!.env.example
