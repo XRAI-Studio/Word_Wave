@@ -218,3 +218,38 @@ output; 249 s. All eight accepted; fix round 1:
 
 Proofs after the fix round: `npm run verify` 14 files / 87 tests; Spanish lock OK;
 grading checks passed. `npm run e2e`: 68 checks passed (26 in part a, 42 in part b).
+
+## Inspection 2 — Codex (REVISE, 3 medium, 1 low)
+
+Runner result `claudex-runs/claudex-0r0rcn2t/result.json`, fresh session
+`01a0da9e-01f5-7e13-b059-f5cb9259d2f3`, base `a70ebfa`, inspected tree `dfa0cca`; usage
+2,520,105 input (2,307,968 cached), 5,330 output; 218 s. All four accepted. This spends
+the default inspection budget (initial plus one after fixes); as on the earlier phases
+of this rollout (Factors took eight), fixing continues with a fresh inspection 3.
+
+- **WW-P5-R2-001** a failed resend re-stored the payload, and a successful Try again
+  never removed it, so a reload sent it again. *Fixed:* the submission now stays stored
+  from the moment it is kept until it is sent successfully (then removed) or discarded;
+  recovery reads it with `peekPending` and removes it with `clearPending`.
+- **WW-P5-R2-002** a 5xx from `/api/user` made the course code empty and discarded valid
+  answers. *Fixed:* a lookup failure keeps the submission and shows the retry; the
+  learner and course compared are the server's (`me.id`, `me.activeCourseCode`), not the
+  booted kit's.
+- **WW-P5-R2-003** a `user-mismatch` 409 was treated as transient and retried forever.
+  *Fixed:* `postCompletion` throws `CompletionError(status, code)`; `user-mismatch`
+  discards the submission; Try again repeats the whole identity/course check before
+  resending.
+- **WW-P5-R2-004** the portal handoff still said Phase 5 was blocked and the portal log
+  had no Phase 5 summary. *Fixed in portal `e4197ac`* (handoff §4 assigns the signed-in
+  lesson, review and launcher check to the user; rollout summary; standard table; DNS
+  guard pending flag removed with its tests updated). Portal `npm run verify`: 28 files /
+  216 tests.
+- Found while fixing: development's StrictMode runs mount effects twice, which (with the
+  submission now kept until sent) sent it twice; a once-per-mount ref guard in
+  `PendingRecovery` stops that. Production does not double-invoke effects.
+
+Proofs after fix round 2: `npm run verify` 14 files / 86 tests (the pending-submission
+suite rewritten for peek/clear/belongsTo); Spanish lock OK; grading checks passed.
+`npm run e2e`: 75 checks passed (26 in part a, 49 in part b; new: a retry removes the
+kept submission and a reload sends nothing again; a 503 profile lookup keeps it and Try
+again sends; a `user-mismatch` 409 discards it and saves nothing).

@@ -391,9 +391,11 @@ async function learnerFlowInDevMode() {
 
     // Lessons used below, by position after `first` (the active one), all distinct:
     // 1 concurrent completion, 2 expired session, 3 overlapping lesson and review,
-    // 4 failed resend and retry, 5 course-mismatch discard, 6 refused resubmission.
+    // 4 failed resend and retry, 5 course-mismatch discard, 6 refused resubmission,
+    // 7 failed profile lookup, 8 user-mismatch refusal of a kept submission.
     const at = (n: number) => lessons[lessons.indexOf(first) + n];
-    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson] = [1, 2, 3, 4, 5, 6].map(at);
+    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson] =
+      [1, 2, 3, 4, 5, 6, 7, 8].map(at);
     const setPending = (p: object) =>
       page.evaluate((v) => sessionStorage.setItem("wordwave:pending-submission", JSON.stringify(v)), p);
     const pendingStored = () => page.evaluate(() => sessionStorage.getItem("wordwave:pending-submission"));
@@ -470,6 +472,35 @@ async function learnerFlowInDevMode() {
     await page.getByRole("button", { name: "Try again" }).click();
     check((await resultStatus(page)) === "awarded", "Try again resends the kept answers");
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: retryLesson.id } })) === 1, "the retried lesson is saved");
+    check((await pendingStored()) === null, "a successful retry removes the kept submission (WW-P5-R2-001)");
+    const xpAfterRetry = (await json<UserBody>("/api/user")).devTotals?.xp;
+    const retryLessonData = await json<{ challenges: Challenge[] }>(`/api/lessons/${retryLesson.id}`);
+    await page.reload();
+    await page.getByRole("heading", { name: retryLessonData.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    check((await json<UserBody>("/api/user")).devTotals?.xp === xpAfterRetry, "a reload after the retry sends nothing again");
+
+    // --- a failed profile lookup keeps the answers and retries (WW-P5-R2-002)
+    await setPending({ path: `/lesson/${lookupLesson.id}`, url: `/api/lessons/${lookupLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.route("**/api/user", (route) => route.fulfill({ status: 503, body: "{}" }));
+    await page.goto(`${base}/lesson/${lookupLesson.id}`);
+    await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
+    check((await pendingStored()) !== null, "a failed identity lookup keeps the submission (no discard)");
+    await page.unroute("**/api/user");
+    await page.getByRole("button", { name: "Try again" }).click();
+    check((await resultStatus(page)) === "awarded", "Try again checks identity again and sends");
+    check((await pendingStored()) === null, "and removes it once sent");
+
+    // --- a user-mismatch refusal discards the kept submission (WW-P5-R2-003)
+    await setPending({ path: `/lesson/${refusedLesson.id}`, url: `/api/lessons/${refusedLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.route(`**/api/lessons/${refusedLesson.id}/complete`, (route) =>
+      route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "user-mismatch" }) })
+    );
+    const refusedData = await json<{ challenges: Challenge[] }>(`/api/lessons/${refusedLesson.id}`);
+    await page.goto(`${base}/lesson/${refusedLesson.id}`);
+    await page.getByRole("heading", { name: refusedData.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    await page.unroute(`**/api/lessons/${refusedLesson.id}/complete`);
+    check((await pendingStored()) === null, "a user-mismatch refusal discards the submission, no retry offered");
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: refusedLesson.id } })) === 0, "and nothing was saved");
 
     // --- expired session mid-lesson: redirect, keep, resubmit once after sign-in
     const thirdLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${third.id}`);
@@ -486,7 +517,11 @@ async function learnerFlowInDevMode() {
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: third.id } })) === 0, "nothing saved while signed out");
     await context.clearCookies({ name: "ww-dev-expired" });
     await page.goto(`${base}/lesson/${third.id}`);
-    check((await resultStatus(page)) === "awarded", "after sign-in the kept submission is sent once and awarded");
+    const recovered = await resultStatus(page).catch(async (e) => {
+      console.error("recovery page text:", (await page.locator("body").innerText()).slice(0, 300));
+      throw e;
+    });
+    check(recovered === "awarded", `after sign-in the kept submission is sent once and awarded (got ${recovered})`);
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: third.id } })) === 1, "the lesson is now saved");
     await page.reload();
     await page.getByRole("heading", { name: chs[0].prompt }).waitFor({ timeout: 20_000 });
