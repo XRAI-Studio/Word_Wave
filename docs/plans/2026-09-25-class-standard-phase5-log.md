@@ -216,5 +216,5 @@ output; 249 s. All eight accepted; fix round 1:
   (`tests/db-url.test.ts`); README "Deploy" updated.
 - **WW-INSPECT-007** `.env.example` was git-ignored by `.env*`. *Fixed:* `!.env.example`.
 
-Proofs after the fix round: `npm run verify` 15 files / 87 tests; Spanish lock OK;
+Proofs after the fix round: `npm run verify` 14 files / 87 tests; Spanish lock OK;
 grading checks passed. `npm run e2e`: 68 checks passed (26 in part a, 42 in part b).
