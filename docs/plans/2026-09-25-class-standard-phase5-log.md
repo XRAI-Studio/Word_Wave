@@ -307,3 +307,18 @@ Runner result `claudex-runs/claudex-tcna_3lc/result.json`, fresh session
 
 Proofs after fix round 4: `npm run verify` 14 files / 86 tests; Spanish lock OK; grading
 checks passed. `npm run e2e`: 93 checks passed (26 in part a, 67 in part b).
+
+## Inspection 5 — blocked (Codex login)
+
+Two attempts (`claudex-runs/claudex-nb6n3qpk`, `claudex-emni1xfn`) failed in about 33 s
+with `401 Unauthorized: Incorrect API key provided` from `chatgpt.com/backend-api/codex`.
+The main Codex home fails the same way on a one-word prompt, so this is the account's
+Codex sign-in, not the review home (its previous `auth.json` is backed up as
+`auth.json.bak-20260925184309`). **Inspection of fix round 4 (`34b46c5`) is outstanding**
+until the user runs `codex login` again; then a fresh inspection with base `a70ebfa`.
+
+State at this point: `34b46c5` deployed (Ready) and CI green on every push; production
+database migrated to `20260925222918_submission_ids`; live gate, API 401 and the
+scottmacscott.com redirect unchanged. Round accounting so far: plan review 3 rounds
+(approved), fix rounds 4, inspections 4 completed (all REVISE, every finding fixed) plus
+1 blocked.
