@@ -69,24 +69,12 @@ export function parseChallenge(row: {
 
 export interface UserDTO {
   id: string;
-  email: string | null;
   displayName: string | null;
-  isGuest: boolean;
-  // False for guests and Google-only accounts, which have no password to change.
-  hasPassword: boolean;
   createdAt: string;
-  xp: number;
-  streakCount: number;
-  lastActiveDate: string | null;
-  gems: number;
-  streakFreezes: number;
   lessonsCompleted: number;
-}
-
-export interface QuestDTO {
-  key: string;
-  title: string;
-  target: number;
-  progress: number;
-  completed: boolean;
+  activeCourseName: string | null;
+  /** Present only in the dev mock session (work order criterion 20). */
+  devTotals?: { xp: number; gems: number; level: number; streak: number };
+  /** The launcher summary the mock portal holds; dev mock session only. */
+  devSummary?: { rev: number; summary: { headline: string; percent: number } } | null;
 }

@@ -1,0 +1,26 @@
+name: verify
+
+# The same four steps as the portal's shared workflow
+# XRAI-Studio/travelschooling-portal/.github/workflows/class-verify.yml, inlined because
+# this repository is public and cannot call a private repository's reusable workflow
+# (class standard rule 4.2 exception). Keep them in step with that file.
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run verify

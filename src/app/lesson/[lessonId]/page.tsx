@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { Quiz } from "@/components/quiz/quiz";
 import type { ChallengeDTO } from "@/lib/types";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 interface LessonResponse {
   id: string;
@@ -19,10 +20,12 @@ export default function LessonPage({ params }: { params: Promise<{ lessonId: str
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/lessons/${lessonId}`)
+    apiFetch(`/api/lessons/${lessonId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setLesson)
-      .catch(() => setError(true));
+      .catch((e) => {
+        if (!(e instanceof RedirectingError)) setError(true);
+      });
   }, [lessonId]);
 
   if (error) {

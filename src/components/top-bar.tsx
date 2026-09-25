@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Flame, Gem, Zap } from "lucide-react";
 import { useGameStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 
 export interface CourseStats {
   levels: number;
@@ -47,7 +48,7 @@ function CourseSwitcher({
     }
     setSwitching(true);
     try {
-      const res = await fetch("/api/course/active", {
+      const res = await apiFetch("/api/course/active", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courseCode: code }),
@@ -118,11 +119,8 @@ export function TopBar({
   activeCourse: CourseOption;
   courses: CourseOption[];
 }) {
-  const { xp, streak, gems, hydrated, hydrate } = useGameStore();
-
-  useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+  // Hydrated once per page load by the KitProvider (work order criterion 20).
+  const { xp, streak, gems, hydrated } = useGameStore();
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur px-4 py-3">

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { requireUser, UnauthorizedError } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { authFailure } from "@/lib/api-errors";
 import { db } from "@/lib/db";
 
 // Courses selectable by the current user (for the picker + top-bar swapper),
@@ -7,11 +8,9 @@ import { db } from "@/lib/db";
 export async function GET() {
   let user;
   try {
-    user = await requireUser();
+    ({ user } = await requireUser());
   } catch (err) {
-    if (err instanceof UnauthorizedError)
-      return NextResponse.json({ error: "Not logged in" }, { status: 401 });
-    throw err;
+    return authFailure(err);
   }
 
   const isProd = process.env.NODE_ENV === "production";

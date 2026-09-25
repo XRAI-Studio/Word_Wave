@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { LessonPath, type UnitData } from "@/components/learn/lesson-path";
 import { InstallPrompt } from "@/components/install-prompt";
-import { QuestsCard } from "@/components/quests-card";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 interface SectionData {
   id: string;
@@ -22,10 +22,12 @@ export default function LearnPage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    fetch("/api/units")
+    apiFetch("/api/units")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setData)
-      .catch(() => setError(true));
+      .catch((e) => {
+        if (!(e instanceof RedirectingError)) setError(true);
+      });
   }, []);
 
   if (error) {
@@ -38,7 +40,6 @@ export default function LearnPage() {
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 pb-24">
-      <QuestsCard />
       <InstallPrompt />
       {data ? (
         data.sections.map((section, si) => (

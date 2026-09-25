@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api-fetch";
 
 interface CourseData {
   activeLessonId: string | null;
@@ -35,7 +36,7 @@ export function CourseMenu() {
 
   // Refetch when the route changes so completion marks stay fresh.
   useEffect(() => {
-    fetch("/api/units")
+    apiFetch("/api/units")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then(setCourse)
       .catch(() => {});

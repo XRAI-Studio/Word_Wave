@@ -3,66 +3,29 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
+// A learner. `id` is the portal account's `sub` (a Supabase user id, or "mock-user" in
+// local development), so there is no local sign-in: the page gate and every API route
+// verify the portal session and upsert this row. XP, streaks, gems, quests and
+// achievements live in the school ledger on the portal, not here.
 model User {
-  id               String   @id @default(cuid())
-  email            String?  @unique
-  passwordHash     String?
-  googleId         String?  @unique
-  displayName      String?
-  isGuest          Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  xp               Int      @default(0)
-  streakCount      Int      @default(0)
-  lastActiveDate   String? // YYYY-MM-DD of last lesson/review completion
-  gems             Int      @default(0)
-  streakFreezes    Int      @default(0)
-  lessonsCompleted Int      @default(0)
-  perfectLessons   Int      @default(0)
-  reviewsCompleted Int      @default(0)
+  id          String   @id
+  displayName String?
+  createdAt   DateTime @default(now())
 
   // Which course the learner is currently on. Null for brand-new users, who
-  // are sent to the first-run picker before reaching the app. XP/streak/gems
-  // and the counters above stay account-wide (shared across courses).
+  // are sent to the first-run picker before reaching the app.
   activeCourseId String?
+
+  // Revision of the summary last published to the portal launcher. Incremented in the
+  // same transaction that reads the summarised snapshot, so a delayed older summary
+  // loses to the portal's `rev` guard (work order criterion 17).
+  summaryRev Int @default(0)
 
   lessonProgress LessonProgress[]
   wordReviews    WordReview[]
-  questProgress  QuestProgress[]
-  achievements   Achievement[]
-  sessions       Session[]
-}
-
-model Session {
-  token     String   @id
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
-  expiresAt DateTime
-}
-
-model QuestProgress {
-  id        String  @id @default(cuid())
-  userId    String
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  date      String // YYYY-MM-DD the quest belongs to
-  questKey  String
-  progress  Int     @default(0)
-  completed Boolean @default(false)
-
-  @@unique([userId, date, questKey])
-}
-
-model Achievement {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  key        String
-  unlockedAt DateTime @default(now())
-
-  @@unique([userId, key])
 }
 
 // A learnable language course. The app ships Spanish (grandfathered content

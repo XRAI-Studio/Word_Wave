@@ -4,16 +4,19 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpenCheck } from "lucide-react";
 import { ChunkyButton } from "@/components/chunky-button";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 export default function ReviewPage() {
   const [dueCount, setDueCount] = useState<number | null>(null);
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/review")
+    apiFetch("/api/review")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => setDueCount(d.dueCount))
-      .catch(() => setDueCount(0));
+      .catch((e) => {
+        if (!(e instanceof RedirectingError)) setDueCount(0);
+      });
   }, []);
 
   return (

@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { initialFailedState, scheduleNext } from "@/lib/srs";
 
 export interface WordResult {
@@ -8,7 +8,14 @@ export interface WordResult {
 
 // Apply SRS results to WordReview rows. Failed words without a review row get
 // one (they enter the review rotation); correct words only update existing rows.
-export async function applySrsResults(userId: string, results: WordResult[], now = new Date()) {
+// Runs on the caller's client: the completion routes pass their transaction so the
+// progress transition and these writes commit together (work order criterion 14).
+export async function applySrsResults(
+  db: Prisma.TransactionClient | PrismaClient,
+  userId: string,
+  results: WordResult[],
+  now = new Date()
+) {
   // Last result wins if a word appears multiple times in one session... unless
   // it was ever wrong, in which case wrong wins (Duolingo re-queues misses).
   const merged = new Map<string, boolean>();
@@ -30,7 +37,12 @@ export async function applySrsResults(userId: string, results: WordResult[], now
     } else if (!correct) {
       const word = await db.word.findUnique({ where: { id: wordId } });
       if (!word) continue; // unknown word id — ignore rather than fail the request
-      await db.wordReview.create({ data: { userId, wordId, ...initialFailedState(now) } });
+      // skipDuplicates (ON CONFLICT DO NOTHING): a concurrent submission of the same
+      // lesson may have just created this row; a plain create would abort the transaction.
+      await db.wordReview.createMany({
+        data: [{ userId, wordId, ...initialFailedState(now) }],
+        skipDuplicates: true,
+      });
     }
   }
 }

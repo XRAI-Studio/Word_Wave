@@ -2,13 +2,20 @@ import { redirect } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/top-bar";
-import { getSessionUser } from "@/lib/auth";
+import { portalRedirectFor, requestOrigin, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
-  // Proxy already gated on the session cookie; resolve the active course here.
-  const user = await getSessionUser();
-  if (!user) redirect("/login");
+  // The page gate (src/proxy.ts) already verified the session; verify again here to get
+  // the learner's row, and send a session that expired in between back to the portal.
+  let user;
+  try {
+    ({ user } = await requireUser());
+  } catch (err) {
+    const target = portalRedirectFor(err, await requestOrigin());
+    if (target) redirect(target);
+    throw err;
+  }
   if (!user.activeCourseId) redirect("/welcome");
   const course = await db.course.findUnique({ where: { id: user.activeCourseId } });
   if (!course) redirect("/welcome");

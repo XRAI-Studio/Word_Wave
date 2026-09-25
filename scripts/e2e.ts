@@ -1,19 +1,194 @@
-/* End-to-end drive of LingoDuo on http://localhost:3000 (or E2E_BASE)
- * 1. Learn path renders and the active lesson is startable
- * 2. Complete the active lesson making ONE deliberate mistake on the first challenge
- * 3. Assert XP was awarded, streak is alive, a WordReview row was scheduled
- * 4. Backdate the missed words' reviews, run a review session, assert XP increases again
+/* End-to-end checks for Word Wave on the class standard (work order criterion 28).
  *
- * NOTE: this drives the real app against the real local DB, so it advances
- * your actual progress and review schedule.
+ * Part (a), production mode (`next build` + `next start`, no cookie): the page gate
+ * redirects to the portal login, API routes answer JSON 401, the old scottmacscott.com
+ * host is redirected, the four security headers are present, assets load, repository
+ * files are not served.
+ *
+ * Part (b), development with the mock kit, session and portal (NEXT_PUBLIC_TS_KIT=mock):
+ * the full learner flow against the local `prisma dev` database (`npm run db:dev`):
+ * course pick, a lesson with one mistake, the replay, a concurrent double completion,
+ * a review session, the HUD across navigation and reload, the launcher summary across a
+ * course switch, direct loads of both quiz routes, and the expired-session round trip
+ * with the pending submission.
+ *
+ * It resets the mock learner's rows first; it never touches production.
  */
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import http from "node:http";
+import net from "node:net";
 import { chromium, type Page } from "playwright";
+import { createDbClient } from "../src/lib/db";
 
-const BASE = process.env.E2E_BASE ?? "http://localhost:3000";
-const SHOTS = process.env.SHOTS_DIR ?? ".";
+try {
+  process.loadEnvFile(".env");
+} catch {}
 
-// Session cookie of the throwaway user this run registers.
-let sessionCookie = "";
+const PORTAL_LOGIN = "https://class.travelschooling.com/login?next=";
+const HEADERS = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "strict-origin-when-cross-origin",
+  "x-frame-options": "DENY",
+  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+};
+const MOCK_USER = "mock-user";
+const failures: string[] = [];
+
+function check(cond: boolean, label: string) {
+  console.log(`${cond ? "PASS" : "FAIL"}: ${label}`);
+  if (!cond) failures.push(label);
+}
+const log = (m: string) => console.log(`\n== ${m}`);
+
+// ---------------------------------------------------------------- servers
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.listen(0, () => {
+      const { port } = srv.address() as net.AddressInfo;
+      srv.close(() => resolve(port));
+    });
+    srv.on("error", reject);
+  });
+}
+
+async function waitForServer(base: string, timeoutMs: number) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch(base + "/favicon.ico", { redirect: "manual" });
+      if (res.status < 500) return;
+    } catch {
+      // not up yet
+    }
+    await new Promise((r) => setTimeout(r, 750));
+  }
+  throw new Error(`server at ${base} did not start`);
+}
+
+function startNext(args: string[], env: Record<string, string>): ChildProcess {
+  const child = spawn("npx", ["next", ...args], {
+    env: { ...process.env, BROWSER: "none", ...env },
+    shell: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.on("data", (d) => process.env.E2E_VERBOSE && process.stdout.write(String(d)));
+  child.stderr?.on("data", (d) => process.env.E2E_VERBOSE && process.stderr.write(String(d)));
+  return child;
+}
+
+/** PIDs listening on a port. `npx next` re-spawns the real server, so the shell's PID tree is not enough. */
+function listenersOnPort(port: number): number[] {
+  try {
+    if (process.platform === "win32") {
+      const out = execFileSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+      return [
+        ...new Set(
+          out
+            .split(/\r?\n/)
+            .filter((l) => l.includes(`:${port} `) && l.includes("LISTENING"))
+            .map((l) => Number(l.trim().split(/\s+/).pop()))
+        ),
+      ].filter((n) => n > 0);
+    }
+    const out = execFileSync("lsof", ["-t", `-iTCP:${port}`, "-sTCP:LISTEN"], { encoding: "utf8" });
+    return out.split(/\s+/).map(Number).filter((n) => n > 0);
+  } catch {
+    return [];
+  }
+}
+
+function killPid(pid: number) {
+  try {
+    if (process.platform === "win32") execFileSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+    else process.kill(pid, "SIGTERM");
+  } catch {
+    // already gone
+  }
+}
+
+function stopServer(child: ChildProcess, port: number) {
+  if (child.pid) killPid(child.pid);
+  for (const pid of listenersOnPort(port)) killPid(pid);
+}
+
+/** A GET with an explicit Host header (fetch does not allow setting Host). */
+function getWithHost(port: number, path: string, host: string): Promise<{ status: number; location?: string }> {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: "localhost", port, path, headers: { host } }, (res) => {
+      res.resume();
+      resolve({ status: res.statusCode ?? 0, location: res.headers.location });
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+// ---------------------------------------------------------------- part (a)
+
+async function gateInProductionMode() {
+  log("part (a): production gate");
+  const port = await freePort();
+  const base = `http://localhost:${port}`;
+  // Explicit values win over `.env`: no mock flag, no database, real Supabase URL.
+  const env = {
+    NODE_ENV: "production",
+    NEXT_PUBLIC_SUPABASE_URL: "https://qywcmcgxgitovswbzets.supabase.co",
+    NEXT_PUBLIC_TS_KIT: "",
+    DATABASE_URL: "",
+  } as const;
+  const stdio: "inherit" | "ignore" = process.env.E2E_VERBOSE ? "inherit" : "ignore";
+  execFileSync("npx", ["next", "build"], { env: { ...process.env, ...env }, shell: true, stdio });
+  const server = startNext(["start", "--hostname", "localhost", "--port", String(port)], env);
+  try {
+    await waitForServer(base, 90_000);
+    const get = (p: string) => fetch(base + p, { redirect: "manual" });
+
+    for (const p of ["/", "/learn", "/lesson/abc", "/review/session", "/welcome"]) {
+      const res = await get(p);
+      check(res.status === 307, `GET ${p} without a cookie is 307 (got ${res.status})`);
+      check(
+        res.headers.get("location") === PORTAL_LOGIN + encodeURIComponent(`${base}${p}`),
+        `GET ${p} redirects to the portal login with next (got ${res.headers.get("location")})`
+      );
+    }
+    const learn = await get("/learn");
+    for (const [k, v] of Object.entries(HEADERS)) {
+      check(learn.headers.get(k) === v, `header ${k} on /learn (got ${learn.headers.get(k)})`);
+    }
+
+    const api = await get("/api/user");
+    check(api.status === 401, `GET /api/user without a cookie is 401 (got ${api.status})`);
+    check(
+      (api.headers.get("content-type") ?? "").includes("application/json"),
+      "API 401 is JSON, not a redirect"
+    );
+
+    for (const host of ["scottmacscott.com", "www.scottmacscott.com"]) {
+      const old = await getWithHost(port, "/learn?x=1", host);
+      check(old.status === 308, `Host ${host} is redirected permanently (got ${old.status})`);
+      check(
+        old.location === "https://wordwave.travelschooling.com/learn?x=1",
+        `Host ${host} lands on the new host with path and query (got ${old.location})`
+      );
+    }
+
+    const icon = await get("/icon-192.png");
+    check(icon.status === 200, `static asset /icon-192.png is 200 (got ${icon.status})`);
+    const manifest = await get("/manifest.webmanifest");
+    check(manifest.status === 307, `the manifest is behind the gate (got ${manifest.status})`);
+    for (const p of ["/prisma/schema.prisma", "/docs/plans/2026-09-25-class-standard-phase5.md", "/PLAN.md", "/.env"]) {
+      const res = await get(p);
+      const body = res.status === 200 ? await res.text() : "";
+      check(res.status !== 200 && !body.includes("datasource"), `${p} is not served (got ${res.status})`);
+    }
+  } finally {
+    stopServer(server, port);
+  }
+}
+
+// ---------------------------------------------------------------- part (b)
 
 type Challenge = {
   id: string;
@@ -27,24 +202,17 @@ type Challenge = {
     wordIds: string[];
   };
 };
-
-type UserState = { xp: number; streakCount: number; gems: number; streakFreezes: number };
-
-async function api<T>(path: string): Promise<T> {
-  const res = await fetch(BASE + path, { headers: { cookie: sessionCookie } });
-  if (!res.ok) throw new Error(`${path} -> ${res.status}`);
-  return res.json() as Promise<T>;
-}
-
-async function postApi<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(BASE + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", cookie: sessionCookie },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`POST ${path} -> ${res.status}`);
-  return res.json() as Promise<T>;
-}
+type Award = { status: string; result: { awarded_xp: number; xp: number; gems: number } | null };
+type UserBody = {
+  lessonsCompleted: number;
+  devTotals?: { xp: number; gems: number };
+  devSummary?: { rev: number; summary: { headline: string; percent: number } } | null;
+};
+type Units = {
+  activeLessonId: string | null;
+  course: { code: string };
+  sections: { fillBlank: boolean; units: { lessons: { id: string; title: string }[] }[] }[];
+};
 
 // Greedy left-to-right reconstruction of the sentence from bank tokens.
 function tokenize(answer: string, bank: string[]): string[] {
@@ -61,27 +229,24 @@ function tokenize(answer: string, bank: string[]): string[] {
   return tokens;
 }
 
-async function solveChallenge(page: Page, ch: Challenge, deliberatelyWrong: boolean) {
-  await page.getByRole("heading", { name: ch.prompt }).waitFor({ timeout: 5000 });
+function escapeRe(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
+async function solveChallenge(page: Page, ch: Challenge, deliberatelyWrong: boolean) {
+  await page.getByRole("heading", { name: ch.prompt }).waitFor({ timeout: 10_000 });
   if (ch.type === "MULTIPLE_CHOICE") {
-    const target = deliberatelyWrong
-      ? ch.meta.choices!.find((c) => c !== ch.correctAnswer)!
-      : ch.correctAnswer;
+    const target = deliberatelyWrong ? ch.meta.choices!.find((c) => c !== ch.correctAnswer)! : ch.correctAnswer;
     await page.getByRole("radio", { name: new RegExp(`\\d+\\s*${escapeRe(target)}$`) }).click();
     await page.getByRole("button", { name: "Check" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
   } else if (ch.type === "FILL_BLANK") {
-    const text = deliberatelyWrong ? "xyz totally wrong" : ch.correctAnswer;
-    await page.getByRole("textbox", { name: "Your answer" }).fill(text);
+    await page.getByRole("textbox", { name: "Your answer" }).fill(deliberatelyWrong ? "xyz totally wrong" : ch.correctAnswer);
     await page.getByRole("button", { name: "Check" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
   } else if (ch.type === "TRANSLATE") {
     for (const tok of tokenize(ch.correctAnswer, ch.meta.wordBank!)) {
-      await page
-        .locator(`button:not([disabled])`, { hasText: new RegExp(`^${escapeRe(tok)}$`) })
-        .last()
-        .click();
+      await page.locator(`button:not([disabled])`, { hasText: new RegExp(`^${escapeRe(tok)}$`) }).last().click();
     }
     await page.getByRole("button", { name: "Check" }).click();
     await page.getByRole("button", { name: "Continue" }).click();
@@ -94,266 +259,220 @@ async function solveChallenge(page: Page, ch: Challenge, deliberatelyWrong: bool
   }
 }
 
-function escapeRe(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** Plays a whole lesson; with `mistake`, the first challenge is answered wrong once and re-queued. */
+async function playLesson(page: Page, challenges: Challenge[], mistake: boolean) {
+  if (mistake) {
+    await solveChallenge(page, challenges[0], true);
+    for (const ch of challenges.slice(1)) await solveChallenge(page, ch, false);
+    await solveChallenge(page, challenges[0], false);
+  } else {
+    for (const ch of challenges) await solveChallenge(page, ch, false);
+  }
 }
 
-// Wait for the end-of-session result screen using a course-agnostic anchor
-// (the celebration text is localized per course, so we don't assert on it).
-async function sessionComplete(page: Page) {
-  await page.getByRole("button", { name: "Back to the path" }).waitFor({ timeout: 10000 });
+async function resultStatus(page: Page): Promise<string | null> {
+  await page.getByRole("button", { name: "Back to the path" }).waitFor({ timeout: 20_000 });
+  const msg = page.getByTestId("award-message");
+  return (await msg.count()) ? msg.getAttribute("data-status") : null;
+}
+
+async function hudXp(page: Page): Promise<number> {
+  const el = page.locator('[title="Total XP"]');
+  try {
+    await el.waitFor({ timeout: 60_000 });
+  } catch (err) {
+    console.error("HUD not visible; page text:", (await page.locator("body").innerText()).slice(0, 400));
+    throw err;
+  }
+  await page.waitForFunction(() => {
+    const hud = document.querySelector('[title="Total XP"]')?.parentElement;
+    return hud && getComputedStyle(hud).opacity === "1";
+  });
+  return Number((await el.innerText()).replace(/\D+/g, ""));
+}
+
+async function hudGems(page: Page): Promise<number> {
+  return Number((await page.locator('[title="Gems"]').innerText()).replace(/\D+/g, ""));
+}
+
+async function learnerFlowInDevMode() {
+  log("part (b): learner flow on the dev mock");
+  if (!process.env.DATABASE_URL?.includes("localhost")) {
+    throw new Error("part (b) needs DATABASE_URL pointing at the local `npm run db:dev` database");
+  }
+  const db = createDbClient(process.env.DATABASE_URL, 2);
+  await db.user.deleteMany({ where: { id: MOCK_USER } }); // cascades progress and reviews
+
+  const port = await freePort();
+  const base = `http://localhost:${port}`;
+  const server = startNext(["dev", "--hostname", "localhost", "--port", String(port)], {
+    NEXT_PUBLIC_TS_KIT: "mock",
+    NEXT_PUBLIC_SUPABASE_URL: "https://qywcmcgxgitovswbzets.supabase.co",
+  });
+  const browser = await chromium.launch();
+  try {
+    await waitForServer(base, 120_000);
+    const json = async <T>(p: string, init?: RequestInit): Promise<T> => {
+      const res = await fetch(base + p, init);
+      if (!res.ok) throw new Error(`${p} -> ${res.status}`);
+      return res.json() as Promise<T>;
+    };
+    const post = <T>(p: string, body: unknown, headers: Record<string, string> = {}) =>
+      json<T>(p, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const page = await context.newPage();
+    // The expired-session step navigates to the portal; answer it locally, never the real one.
+    await context.route("https://class.travelschooling.com/**", (route) =>
+      route.fulfill({ status: 200, contentType: "text/html", body: "<title>portal stub</title>portal" })
+    );
+
+    // --- course pick
+    const noCourse = await fetch(base + "/api/units");
+    check(noCourse.status === 409, `units gated before a course is picked (got ${noCourse.status})`);
+    await page.goto(base + "/learn");
+    await page.waitForURL("**/welcome", { timeout: 60_000 });
+    check(true, "a new learner lands on the course picker");
+    const html = await (await fetch(base + "/welcome")).text();
+    check(
+      /<link rel="manifest" href="\/manifest.webmanifest" crossorigin="use-credentials"\/?>/.test(html),
+      "the manifest link carries crossorigin=use-credentials"
+    );
+    await page.getByRole("button", { name: /Spanish/ }).click();
+    await page.waitForURL("**/learn", { timeout: 30_000 });
+    check((await hudXp(page)) === 0, "HUD starts at 0 XP");
+
+    // --- first lesson with one mistake
+    const units = await json<Units>("/api/units");
+    const lessons = units.sections.flatMap((s) => s.units).flatMap((u) => u.lessons);
+    const first = lessons.find((l) => l.id === units.activeLessonId)!;
+    const firstLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${first.id}`);
+    await page.getByRole("button", { name: `${first.title} — start lesson` }).click();
+    await playLesson(page, firstLesson.challenges, true);
+    check((await resultStatus(page)) === "awarded", "first completion: award status awarded");
+    check((await page.getByTestId("xp-earned").innerText()) === "10", "result screen shows 10 XP earned");
+
+    const progress = await db.lessonProgress.findMany({ where: { userId: MOCK_USER } });
+    check(progress.length === 1 && progress[0].lessonId === first.id, "one LessonProgress row");
+    const missed = await db.wordReview.findMany({ where: { userId: MOCK_USER } });
+    check(missed.length >= 1, `the missed word entered review (${missed.length} WordReview rows)`);
+
+    await page.getByRole("button", { name: "Back to the path" }).click();
+    await page.waitForURL("**/learn");
+    check((await hudXp(page)) === 10, "HUD shows 10 XP after returning to the path");
+    check((await hudGems(page)) === 5, "HUD shows the first-lesson achievement's 5 gems without a reload");
+    await page.reload();
+    check((await hudXp(page)) === 10, "HUD still shows 10 XP after a reload");
+
+    let me = await json<UserBody>("/api/user");
+    const revAfterFirst = me.devSummary?.rev ?? 0;
+    check(me.devSummary?.summary.headline === "1 lesson done in Spanish", `launcher headline (got ${me.devSummary?.summary.headline})`);
+
+    // --- replay by direct load: no second award
+    await page.goto(`${base}/lesson/${first.id}`);
+    await playLesson(page, firstLesson.challenges, false);
+    check((await resultStatus(page)) === "skipped", "replay: award status skipped");
+    check((await page.getByTestId("award-message").innerText()).includes("Already completed"), "replay says already completed");
+    me = await json<UserBody>("/api/user");
+    check(me.devTotals?.xp === 10, `replay awarded nothing (xp ${me.devTotals?.xp})`);
+
+    // --- direct loads and reloads of both quiz routes
+    await page.goto(`${base}/lesson/${first.id}`);
+    await page.getByRole("heading", { name: firstLesson.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    await page.reload();
+    await page.getByRole("heading", { name: firstLesson.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    check(true, "a lesson loads and reloads directly");
+    await page.goto(`${base}/review/session`);
+    await page
+      .getByText(/Nothing to review right now|Check/)
+      .first()
+      .waitFor({ timeout: 20_000 });
+    check((await page.getByTestId("kit-failed").count()) === 0, "the review session loads directly");
+
+    // Lessons used below, by position after `first` (the active one): `second` for the
+    // concurrent completion, `third` for the expired session, `mismatchLesson` (six on)
+    // for the refused resubmission. They must stay distinct.
+    const at = (n: number) => lessons[lessons.indexOf(first) + n];
+    const [second, third, mismatchLesson] = [at(1), at(2), at(6)];
+
+    // --- concurrent double completion of a new lesson: one award
+    const body = { failedWordIds: [], correctWordIds: [], mistakes: 0 };
+    const [a, b] = await Promise.all([
+      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, body),
+      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, body),
+    ]);
+    check([a, b].filter((r) => r.firstCompletion).length === 1, "concurrent completions: exactly one first completion");
+    check([a, b].filter((r) => r.award.status === "awarded").length === 1, "concurrent completions: exactly one award");
+    me = await json<UserBody>("/api/user");
+    check(me.devTotals?.xp === 20, `two lessons, 20 XP (got ${me.devTotals?.xp})`);
+
+    // --- expected-user mismatch is refused without writing
+    const mismatch = await fetch(`${base}/api/lessons/${mismatchLesson.id}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-WordWave-Expect-User": "someone-else" },
+      body: JSON.stringify(body),
+    });
+    check(mismatch.status === 409, `resubmission for another learner is 409 (got ${mismatch.status})`);
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: mismatchLesson.id } })) === 0, "and writes nothing");
+
+    // --- review session: one review_session award
+    await db.wordReview.updateMany({ where: { userId: MOCK_USER }, data: { dueAt: new Date(Date.now() - 1000) } });
+    const review = await json<{ challenges: Challenge[] }>("/api/review");
+    await page.goto(base + "/review");
+    await page.getByRole("button", { name: "Start review" }).click();
+    for (const ch of review.challenges) await solveChallenge(page, ch, false);
+    check((await resultStatus(page)) === "awarded", "review: award status awarded");
+    me = await json<UserBody>("/api/user");
+    check(me.devTotals?.xp === 30, `review earned one 10 XP award (xp ${me.devTotals?.xp})`);
+
+    // --- expired session mid-lesson: redirect, keep, resubmit once after sign-in
+    const thirdLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${third.id}`);
+    await page.goto(`${base}/lesson/${third.id}`);
+    const chs = thirdLesson.challenges;
+    for (const ch of chs.slice(0, -1)) await solveChallenge(page, ch, false);
+    await context.addCookies([{ name: "ww-dev-expired", value: "1", url: base }]);
+    await solveChallenge(page, chs[chs.length - 1], false);
+    await page.waitForURL("https://class.travelschooling.com/**", { timeout: 20_000 });
+    check(
+      page.url() === PORTAL_LOGIN + encodeURIComponent(`${base}/lesson/${third.id}`),
+      `expired session goes to the portal login with this lesson as next (got ${page.url()})`
+    );
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: third.id } })) === 0, "nothing saved while signed out");
+    await context.clearCookies({ name: "ww-dev-expired" });
+    await page.goto(`${base}/lesson/${third.id}`);
+    check((await resultStatus(page)) === "awarded", "after sign-in the kept submission is sent once and awarded");
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: third.id } })) === 1, "the lesson is now saved");
+    await page.reload();
+    await page.getByRole("heading", { name: chs[0].prompt }).waitFor({ timeout: 20_000 });
+    check(true, "a second load does not resubmit (a fresh quiz is shown)");
+
+    // --- launcher summary across a course switch
+    me = await json<UserBody>("/api/user");
+    const revBeforeSwitch = me.devSummary?.rev ?? 0;
+    check(revBeforeSwitch > revAfterFirst, `summary revisions increase (${revAfterFirst} -> ${revBeforeSwitch})`);
+    await post("/api/course/active", { courseCode: "la" });
+    me = await json<UserBody>("/api/user");
+    check((me.devSummary?.rev ?? 0) > revBeforeSwitch, "a course switch publishes a newer summary");
+    check(me.devSummary?.summary.headline === "0 lessons done in Latin", `headline follows the switch (got ${me.devSummary?.summary.headline})`);
+    const dbRev = (await db.user.findUniqueOrThrow({ where: { id: MOCK_USER } })).summaryRev;
+    check(dbRev === me.devSummary?.rev, `the database revision matches the published one (${dbRev})`);
+    await post("/api/course/active", { courseCode: "es" });
+
+    await context.close();
+  } finally {
+    await browser.close();
+    stopServer(server, port);
+    await db.$disconnect();
+  }
 }
 
 async function main() {
-  const browser = await chromium.launch();
-  const failures: string[] = [];
-  const expect = (cond: boolean, label: string) => {
-    console.log(`${cond ? "PASS" : "FAIL"}: ${label}`);
-    if (!cond) failures.push(label);
-  };
-
-  // --- auth 1. logged-out requests are rejected / redirected
-  const anonRes = await fetch(BASE + "/api/user");
-  expect(anonRes.status === 401, `anonymous /api/user is 401 (got ${anonRes.status})`);
-
-  const anonContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  const anonPage = await anonContext.newPage();
-  await anonPage.goto(BASE + "/learn");
-  await anonPage.waitForURL("**/login", { timeout: 10000 });
-  expect(anonPage.url().includes("/login"), "anonymous /learn redirects to /login");
-  await anonContext.close();
-
-  // --- auth 2. register a throwaway user and carry its session everywhere
-  const email = `e2e-${Date.now()}@example.com`;
-  const regRes = await fetch(BASE + "/api/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "e2e-password", displayName: "E2E Runner" }),
-  });
-  expect(regRes.ok, `registered throwaway user ${email} (got ${regRes.status})`);
-  const setCookie = regRes.headers
-    .getSetCookie()
-    .find((c) => c.startsWith("lingoduo_session="));
-  if (!setCookie) throw new Error("register response did not set a session cookie");
-  sessionCookie = setCookie.split(";")[0];
-  const sessionToken = sessionCookie.split("=")[1];
-
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
-  await context.addCookies([{ name: "lingoduo_session", value: sessionToken, url: BASE }]);
-  const page = await context.newPage();
-
-  // --- 0. new users have no active course (they hit the first-run picker);
-  // /api/units is gated until one is chosen. Pick Spanish, like the picker does.
-  const noCourse = await fetch(BASE + "/api/units", { headers: { cookie: sessionCookie } });
-  expect(noCourse.status === 409, `units gated before course pick (got ${noCourse.status})`);
-  const picked = await postApi<{ activeCourseCode: string }>("/api/course/active", {
-    courseCode: "es",
-  });
-  expect(picked.activeCourseCode === "es", `picked Spanish course (got ${picked.activeCourseCode})`);
-
-  const before = await api<UserState>("/api/user");
-  expect(before.xp === 0, `fresh user starts at 0 XP (got ${before.xp})`);
-  const course = await api<{
-    activeLessonId: string | null;
-    sections: { units: { lessons: { id: string; title: string }[] }[] }[];
-  }>("/api/units");
-  if (!course.activeLessonId) {
-    console.log("Course already complete — nothing to drive. Reseed to rerun.");
-    await browser.close();
-    return;
-  }
-  const activeLesson = course.sections
-    .flatMap((s) => s.units)
-    .flatMap((u) => u.lessons)
-    .find((l) => l.id === course.activeLessonId)!;
-
-  // --- 1. learn path
-  await page.goto(BASE + "/learn");
-  await page.getByText("Start", { exact: true }).waitFor({ timeout: 15000 });
-  await page.screenshot({ path: `${SHOTS}/learn.png` });
-  const startNode = page.getByRole("button", {
-    name: `${activeLesson.title} — start lesson`,
-  });
-  expect(await startNode.isVisible(), `active lesson "${activeLesson.title}" startable`);
-
-  // --- 2. complete it with one deliberate mistake on the first challenge
-  const lesson = await api<{ challenges: Challenge[] }>(`/api/lessons/${activeLesson.id}`);
-  await startNode.click();
-  await page
-    .getByRole("heading", { name: lesson.challenges[0].prompt })
-    .waitFor({ timeout: 10000 });
-  await page.screenshot({ path: `${SHOTS}/quiz.png` });
-
-  await solveChallenge(page, lesson.challenges[0], true);
-  for (const ch of lesson.challenges.slice(1)) await solveChallenge(page, ch, false);
-  await solveChallenge(page, lesson.challenges[0], false); // re-queued missed card
-
-  await sessionComplete(page);
-  await page.screenshot({ path: `${SHOTS}/result.png` });
-
-  // --- 3. server state moved
-  const after = await api<UserState>("/api/user");
-  expect(after.xp === before.xp + 20, `lesson XP +20 (${before.xp} -> ${after.xp})`);
-  expect(after.streakCount >= 1, `streak alive (got ${after.streakCount})`);
-  expect(after.gems > before.gems, `lesson gems awarded (${before.gems} -> ${after.gems})`);
-
-  const unitsAfter = await api<{ activeLessonId: string | null }>("/api/units");
-  expect(
-    unitsAfter.activeLessonId !== activeLesson.id,
-    `path advanced past ${activeLesson.id} (now ${unitsAfter.activeLessonId})`
-  );
-
-  // --- 4. review flow: backdate only the words missed in this run
-  const missedIds = lesson.challenges[0].meta.wordIds;
-  const { execSync } = await import("node:child_process");
-  const backdateScript =
-    "const {PrismaClient}=require('@prisma/client');" +
-    "const {PrismaBetterSqlite3}=require('@prisma/adapter-better-sqlite3');" +
-    "const f=process.env.DATABASE_PATH?require('path').resolve(process.env.DATABASE_PATH):require('path').join(process.cwd(),'prisma','dev.db');" +
-    "const db=new PrismaClient({adapter:new PrismaBetterSqlite3({url:'file:'+f})});" +
-    "db.wordReview.updateMany({where:{wordId:{in:JSON.parse(process.env.MISSED_IDS)}},data:{dueAt:new Date(Date.now()-1000)}})" +
-    ".then(r=>{console.log(r.count);return db.$disconnect()})";
-  const backdated = execSync(`npx tsx -e "${backdateScript}"`, {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: { ...process.env, MISSED_IDS: JSON.stringify(missedIds) },
-  }).trim();
-  expect(Number(backdated) >= 1, `WordReview scheduled for missed word (got ${backdated})`);
-
-  const review = await api<{ challenges: Challenge[] }>("/api/review");
-  await page.goto(BASE + "/review");
-  await page.getByText(/due for review/).waitFor({ timeout: 10000 });
-  await page.screenshot({ path: `${SHOTS}/review.png` });
-  await page.getByRole("button", { name: "Start review" }).click();
-
-  await page
-    .getByRole("heading", { name: review.challenges[0].prompt })
-    .waitFor({ timeout: 10000 });
-  for (const ch of review.challenges) await solveChallenge(page, ch, false);
-  await sessionComplete(page);
-
-  const final = await api<UserState>("/api/user");
-  expect(final.xp > after.xp, `review XP awarded (${after.xp} -> ${final.xp})`);
-  expect(final.gems > after.gems, `review gems awarded (${after.gems} -> ${final.gems})`);
-
-  // Checked after both a lesson and a review: every possible daily-quest
-  // window (date-hashed from the pool) contains at least one quest kind
-  // that one of those two activities advances.
-  const questsNow = await api<{ quests: { progress: number; completed: boolean }[] }>("/api/quests");
-  expect(
-    questsNow.quests.some((q) => q.progress > 0 || q.completed),
-    "daily quest progress advanced"
-  );
-
-  // --- 4b. streak-freeze shop honors its contract either way
-  const shopRes = await fetch(BASE + "/api/shop/streak-freeze", {
-    method: "POST",
-    headers: { cookie: sessionCookie },
-  });
-  const shopBody = (await shopRes.json()) as { streakFreezes?: number; error?: string };
-  if (shopRes.ok) {
-    expect(
-      (shopBody.streakFreezes ?? 0) === final.streakFreezes + 1,
-      `streak freeze purchased (${final.streakFreezes} -> ${shopBody.streakFreezes})`
-    );
-  } else {
-    expect(
-      shopRes.status === 400 && typeof shopBody.error === "string",
-      `streak freeze purchase rejected cleanly (${shopRes.status}: ${shopBody.error})`
-    );
-  }
-
-  // --- 5. fill-blank (Level 3) lesson: typed answers end-to-end. Select the
-  // section STRUCTURALLY via the fillBlank metadata, not by a title string.
-  const fullCourse = await api<{
-    sections: { fillBlank: boolean; units: { lessons: { id: string }[] }[] }[];
-  }>("/api/units");
-  const fbSection = fullCourse.sections.find((s) => s.fillBlank);
-  if (!fbSection) {
-    expect(false, "a fill-blank (Level 3) section exists");
-  } else {
-    const l3LessonId = fbSection.units[0].lessons[0].id;
-    const l3Lesson = await api<{ challenges: Challenge[] }>(`/api/lessons/${l3LessonId}`);
-    expect(
-      l3Lesson.challenges.some((c) => c.type === "FILL_BLANK") &&
-        l3Lesson.challenges.every((c) => c.type !== "MULTIPLE_CHOICE"),
-      "fill-blank lesson uses FILL_BLANK instead of MULTIPLE_CHOICE"
-    );
-
-    await page.goto(`${BASE}/lesson/${l3LessonId}`);
-    await page
-      .getByRole("heading", { name: l3Lesson.challenges[0].prompt })
-      .waitFor({ timeout: 10000 });
-    await page.screenshot({ path: `${SHOTS}/fill-blank.png` });
-    for (const ch of l3Lesson.challenges) await solveChallenge(page, ch, false);
-    await sessionComplete(page);
-
-    const afterL3 = await api<UserState>("/api/user");
-    expect(afterL3.xp > final.xp, `fill-blank lesson XP awarded (${final.xp} -> ${afterL3.xp})`);
-  }
-
-  // --- 5b. second course (Latin): switch, drive a Latin lesson, and confirm
-  // XP is shared account-wide while path progress stays siloed per course.
-  const esActiveBefore = (await api<{ activeLessonId: string | null }>("/api/units")).activeLessonId;
-  const xpBeforeLatin = (await api<UserState>("/api/user")).xp;
-
-  const toLatin = await postApi<{ activeCourseCode: string }>("/api/course/active", {
-    courseCode: "la",
-  });
-  expect(toLatin.activeCourseCode === "la", `switched to Latin (got ${toLatin.activeCourseCode})`);
-
-  const latin = await api<{
-    activeLessonId: string | null;
-    course: { code: string };
-  }>("/api/units");
-  expect(latin.course.code === "la", `units now serve Latin (got ${latin.course.code})`);
-  expect(latin.activeLessonId !== null, "Latin course has a startable lesson");
-
-  if (latin.activeLessonId) {
-    const latinLesson = await api<{ challenges: Challenge[] }>(
-      `/api/lessons/${latin.activeLessonId}`
-    );
-    await page.goto(`${BASE}/lesson/${latin.activeLessonId}`);
-    await page
-      .getByRole("heading", { name: latinLesson.challenges[0].prompt })
-      .waitFor({ timeout: 10000 });
-    await page.screenshot({ path: `${SHOTS}/latin.png` });
-    for (const ch of latinLesson.challenges) await solveChallenge(page, ch, false);
-    await sessionComplete(page);
-
-    const xpAfterLatin = (await api<UserState>("/api/user")).xp;
-    expect(xpAfterLatin > xpBeforeLatin, `Latin lesson shares XP (${xpBeforeLatin} -> ${xpAfterLatin})`);
-  }
-
-  // switch back to Spanish: its path position is exactly where we left it.
-  await postApi("/api/course/active", { courseCode: "es" });
-  const esAfter = await api<{ activeLessonId: string | null; course: { code: string } }>(
-    "/api/units"
-  );
-  expect(esAfter.course.code === "es", `switched back to Spanish (got ${esAfter.course.code})`);
-  expect(
-    esAfter.activeLessonId === esActiveBefore,
-    `Spanish path unaffected by Latin (${esActiveBefore} vs ${esAfter.activeLessonId})`
-  );
-
-  // --- 6. phone viewport: bottom tab bar navigates the app
-  const mobileContext = await browser.newContext({ viewport: { width: 360, height: 800 } });
-  await mobileContext.addCookies([{ name: "lingoduo_session", value: sessionToken, url: BASE }]);
-  const mobilePage = await mobileContext.newPage();
-  await mobilePage.goto(BASE + "/learn");
-  await mobilePage.getByText("Daily quests").waitFor({ timeout: 15000 });
-  const bottomNav = mobilePage.getByRole("navigation", { name: "Primary" });
-  expect(await bottomNav.isVisible(), "mobile bottom nav visible at 360px");
-  await mobilePage.screenshot({ path: `${SHOTS}/mobile-learn.png` });
-  await bottomNav.getByRole("link", { name: "Profile" }).click();
-  await mobilePage.getByText("E2E Runner").waitFor({ timeout: 10000 });
-  expect(true, "mobile profile shows the logged-in user");
-  await mobilePage.screenshot({ path: `${SHOTS}/mobile-profile.png` });
-  await mobileContext.close();
-
-  await browser.close();
+  const only = process.argv[2];
+  if (only !== "b") await gateInProductionMode();
+  if (only !== "a") await learnerFlowInDevMode();
   if (failures.length) {
     console.error(`\n${failures.length} FAILURE(S)`);
+    for (const f of failures) console.error(`  - ${f}`);
     process.exit(1);
   }
   console.log("\nALL E2E CHECKS PASSED");

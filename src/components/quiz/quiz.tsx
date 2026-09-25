@@ -10,6 +10,10 @@ import { MatchPairs } from "@/components/quiz/match-pairs";
 import { MultipleChoice } from "@/components/quiz/multiple-choice";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { Translate } from "@/components/quiz/translate";
+import { useKit } from "@/components/kit-provider";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
+import type { AwardOutcome } from "@/lib/completion";
+import { savePending, takePending, type PendingSubmission } from "@/lib/pending-submission";
 import { useGameStore } from "@/lib/store";
 import { normalizeTyped } from "@/lib/course-policy";
 import type { ChallengeDTO } from "@/lib/types";
@@ -17,14 +21,10 @@ import { cn } from "@/lib/utils";
 
 type Status = "answering" | "correct" | "wrong" | "submitting" | "done";
 
-interface Rewards {
-  xpEarned: number;
-  xp: number;
-  streakCount: number;
-  gems: number;
-  gemsEarned: number;
-  questsCompleted: { key: string; title: string; gems: number }[];
-  achievementsUnlocked: { key: string; title: string; description: string }[];
+/** What both completion routes return (work order criterion 16). */
+interface CompletionResponse {
+  firstCompletion?: boolean;
+  award: AwardOutcome;
 }
 
 // Orchestrates a quiz session. Lesson mode marks the lesson complete;
@@ -45,7 +45,8 @@ export function Quiz({
   courseCode?: string;
 }) {
   const router = useRouter();
-  const { hydrate, applyRewards } = useGameStore();
+  const kit = useKit();
+  const applyAward = useGameStore((st) => st.applyAward);
 
   const [queue, setQueue] = useState(challenges);
   const [idx, setIdx] = useState(0);
@@ -55,15 +56,27 @@ export function Quiz({
   const [fbValue, setFbValue] = useState("");
   const [solved, setSolved] = useState<Set<string>>(new Set());
   const [mistakes, setMistakes] = useState(0);
-  const [rewards, setRewards] = useState<(Rewards & { accuracy: number }) | null>(null);
+  const [outcome, setOutcome] = useState<{ award: AwardOutcome; accuracy: number } | null>(null);
 
   // wordId -> true only if never missed this session; challengeId -> first try correct
   const wordResults = useRef(new Map<string, boolean>());
   const firstTry = useRef(new Map<string, boolean>());
 
+  // A completion saved before a sign-in round trip (criterion 21): submit it once, only
+  // for the same learner and course, and show its result instead of a fresh quiz.
+  const replayed = useRef(false);
   useEffect(() => {
-    hydrate();
-  }, [hydrate]);
+    if (replayed.current || !kit.user) return;
+    replayed.current = true;
+    const pending = takePending(window.sessionStorage, {
+      path: window.location.pathname,
+      userId: kit.user.id,
+      courseCode: courseCode ?? "",
+    });
+    if (pending) void submit(pending);
+    // Runs once per mount; `submit` only reads refs and stable setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kit.user]);
 
   const current = queue[idx];
 
@@ -116,50 +129,55 @@ export function Quiz({
     }
   }
 
-  async function finish() {
+  async function submit(p: PendingSubmission) {
     setStatus("submitting");
-    const entries = [...wordResults.current.entries()];
     try {
-      const res =
-        mode === "lesson"
-          ? await fetch(`/api/lessons/${lessonId}/complete`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                failedWordIds: entries.filter(([, ok]) => !ok).map(([id]) => id),
-                correctWordIds: entries.filter(([, ok]) => ok).map(([id]) => id),
-                mistakes,
-              }),
-            })
-          : await fetch("/api/review/complete", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                results: entries.map(([wordId, correct]) => ({ wordId, correct })),
-              }),
-            });
+      const res = await apiFetch(
+        p.url,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-WordWave-Expect-User": p.userId },
+          body: JSON.stringify(p.body),
+        },
+        // Session expired mid-quiz: keep the answers for after the portal sign-in.
+        { beforeRedirect: () => savePending(window.sessionStorage, p) }
+      );
       if (!res.ok) throw new Error(String(res.status));
-      const data: Rewards = await res.json();
-      applyRewards({
-        xp: data.xp,
-        streakCount: data.streakCount,
-        gems: data.gems,
-      });
-      const attempts = [...firstTry.current.values()];
-      const accuracy = attempts.length
-        ? attempts.filter(Boolean).length / attempts.length
-        : 1;
-      setRewards({ ...data, accuracy });
+      const data: CompletionResponse = await res.json();
+      if (data.award.result) applyAward(data.award.result);
+      setOutcome({ award: data.award, accuracy: p.accuracy });
       setStatus("done");
-    } catch {
-      toast.error("Couldn't save your progress — check the app is running locally.");
+    } catch (err) {
+      if (err instanceof RedirectingError) return;
+      toast.error("Couldn't save your progress. Check your connection and try again.");
       setStatus("correct"); // let the user hit Continue and retry
     }
   }
 
+  function finish() {
+    const entries = [...wordResults.current.entries()];
+    const attempts = [...firstTry.current.values()];
+    const accuracy = attempts.length ? attempts.filter(Boolean).length / attempts.length : 1;
+    void submit({
+      path: window.location.pathname,
+      url: mode === "lesson" ? `/api/lessons/${lessonId}/complete` : "/api/review/complete",
+      body:
+        mode === "lesson"
+          ? {
+              failedWordIds: entries.filter(([, ok]) => !ok).map(([id]) => id),
+              correctWordIds: entries.filter(([, ok]) => ok).map(([id]) => id),
+              mistakes,
+            }
+          : { results: entries.map(([wordId, correct]) => ({ wordId, correct })) },
+      userId: kit.user?.id ?? "",
+      courseCode: courseCode ?? "",
+      accuracy,
+    });
+  }
+
   function advance() {
     if (idx + 1 >= queue.length) {
-      void finish();
+      finish();
       return;
     }
     setIdx(idx + 1);
@@ -169,15 +187,12 @@ export function Quiz({
     setStatus("answering");
   }
 
-  if (status === "done" && rewards) {
+  if (status === "done" && outcome) {
     return (
       <ResultScreen
-        xpEarned={rewards.xpEarned}
-        streak={rewards.streakCount}
-        accuracy={rewards.accuracy}
-        gemsEarned={rewards.gemsEarned}
-        questsCompleted={rewards.questsCompleted}
-        achievementsUnlocked={rewards.achievementsUnlocked}
+        award={outcome.award}
+        mode={mode}
+        accuracy={outcome.accuracy}
         celebrateLabel={labels.celebrate}
       />
     );

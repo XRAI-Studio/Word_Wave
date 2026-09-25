@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 interface CourseOption {
   code: string;
@@ -15,20 +16,24 @@ export default function WelcomePage() {
   const [choosing, setChoosing] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/courses")
+    apiFetch("/api/courses")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d: { activeCourseCode: string | null; courses: CourseOption[] }) => {
         // Already picked (e.g. back button) — go straight in.
         if (d.activeCourseCode) window.location.assign("/learn");
         else setCourses(d.courses);
       })
-      .catch(() => window.location.assign("/login"));
+      // A signed-out learner is already on the way to the portal (apiFetch); any other
+      // failure reloads, and the page gate decides again.
+      .catch((e) => {
+        if (!(e instanceof RedirectingError)) window.location.reload();
+      });
   }, []);
 
   async function choose(code: string) {
     setChoosing(code);
     try {
-      const res = await fetch("/api/course/active", {
+      const res = await apiFetch("/api/course/active", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courseCode: code }),

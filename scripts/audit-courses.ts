@@ -9,14 +9,9 @@
  * Exits non-zero if any zero-tolerance issue is found. Run after a migration
  * or seed:  npx tsx scripts/audit-courses.ts
  */
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
+import { createDbClient } from "../src/lib/db";
 
-const dbFile = process.env.DATABASE_PATH
-  ? path.resolve(process.env.DATABASE_PATH)
-  : path.join(__dirname, "..", "prisma", "dev.db");
-const db = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${dbFile}` }) });
+const db = createDbClient();
 
 async function main() {
   const problems: string[] = [];

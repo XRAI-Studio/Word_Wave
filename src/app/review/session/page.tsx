@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Quiz } from "@/components/quiz/quiz";
 import type { ChallengeDTO } from "@/lib/types";
+import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 type Labels = { correct: string; celebrate: string };
 const DEFAULT_LABELS: Labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" };
@@ -14,14 +15,16 @@ export default function ReviewSessionPage() {
   const [courseCode, setCourseCode] = useState<string | undefined>();
 
   useEffect(() => {
-    fetch("/api/review")
+    apiFetch("/api/review")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => {
         setChallenges(d.challenges);
         if (d.labels) setLabels(d.labels);
         if (d.courseCode) setCourseCode(d.courseCode);
       })
-      .catch(() => setChallenges([]));
+      .catch((e) => {
+        if (!(e instanceof RedirectingError)) setChallenges([]);
+      });
   }, []);
 
   if (!challenges) {

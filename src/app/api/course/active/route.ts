@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { requireUser, UnauthorizedError } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
+import { authFailure } from "@/lib/api-errors";
 import { db } from "@/lib/db";
+import { portalFor } from "@/lib/portal";
+import { publishSummary } from "@/lib/progress-service";
 
 const bodySchema = z.object({ courseCode: z.string().min(1).max(8) });
 
@@ -9,14 +12,13 @@ const bodySchema = z.object({ courseCode: z.string().min(1).max(8) });
 // swapper). Validates the course exists and — in production — is available
 // (dev-only/fixture courses can't be selected in prod).
 export async function POST(req: Request) {
-  let user;
+  let signedIn;
   try {
-    user = await requireUser();
+    signedIn = await requireUser();
   } catch (err) {
-    if (err instanceof UnauthorizedError)
-      return NextResponse.json({ error: "Not logged in" }, { status: 401 });
-    throw err;
+    return authFailure(err);
   }
+  const { user, token } = signedIn;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -32,6 +34,10 @@ export async function POST(req: Request) {
   }
 
   await db.user.update({ where: { id: user.id }, data: { activeCourseId: course.id } });
+
+  // The launcher tile names the active course, so a switch publishes a new summary
+  // (work order criterion 17).
+  await publishSummary(portalFor(), { token, userId: user.id });
 
   return NextResponse.json({ ok: true, activeCourseCode: course.code });
 }

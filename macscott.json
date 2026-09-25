@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "title": "WordWave",
-  "description": "A language-learning app built around short daily sessions: a unit-by-unit course, three exercise types, XP and streaks, and an SM-2 spaced-repetition schedule that resurfaces the words you keep missing. Ships with Spanish and Latin courses for English speakers — roughly 1,300 words and 4,600 exercises. Accounts keep progress in sync across devices.",
+  "description": "A language-learning app built around short daily sessions: a unit-by-unit course, three exercise types, XP and streaks, and an SM-2 spaced-repetition schedule that resurfaces the words you keep missing. Ships with Spanish and Latin courses for English speakers — roughly 1,300 words and 4,600 exercises. A Travel Schooling class: learners sign in with their school account, and lessons and reviews earn XP on the shared school ledger.",
   "owner": "both",
-  "liveUrl": "https://scottmacscott.com",
+  "liveUrl": "https://wordwave.travelschooling.com",
   "embeddable": false,
   "accent": "#1e5ae8"
 }

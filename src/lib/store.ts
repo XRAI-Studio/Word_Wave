@@ -1,51 +1,30 @@
 "use client";
 
 import { create } from "zustand";
-import type { UserDTO } from "@/lib/types";
+import type { KitAwardResult, KitTotals } from "@/lib/kit";
 
+/**
+ * The HUD's totals (work order criterion 20). They are hydrated once per page load, from
+ * the kit's `totals` in production or from the server's mock portal in development, and
+ * afterwards only move with the totals a completion returns: Word Wave's awards are made
+ * on the server, so the kit's own `totals` go stale after the first one.
+ */
 interface GameState {
   hydrated: boolean;
   xp: number;
+  level: number;
   streak: number;
   gems: number;
-  streakFreezes: number;
-  hydrate: () => Promise<void>;
-  applyRewards: (r: {
-    xp: number;
-    streakCount: number;
-    gems?: number;
-    streakFreezes?: number;
-  }) => void;
+  hydrate: (t: KitTotals) => void;
+  applyAward: (r: KitAwardResult) => void;
 }
 
 export const useGameStore = create<GameState>((set) => ({
   hydrated: false,
   xp: 0,
+  level: 1,
   streak: 0,
   gems: 0,
-  streakFreezes: 0,
-  hydrate: async () => {
-    const res = await fetch("/api/user");
-    if (res.status === 401) {
-      // Session expired mid-visit; the proxy only sees cookie presence.
-      window.location.href = "/login";
-      return;
-    }
-    if (!res.ok) return;
-    const user: UserDTO = await res.json();
-    set({
-      hydrated: true,
-      xp: user.xp,
-      streak: user.streakCount,
-      gems: user.gems,
-      streakFreezes: user.streakFreezes,
-    });
-  },
-  applyRewards: ({ xp, streakCount, gems, streakFreezes }) =>
-    set((s) => ({
-      xp,
-      streak: streakCount,
-      gems: gems ?? s.gems,
-      streakFreezes: streakFreezes ?? s.streakFreezes,
-    })),
+  hydrate: ({ xp, level, streak, gems }) => set({ hydrated: true, xp, level, streak, gems }),
+  applyAward: ({ xp, level, streak, gems }) => set({ hydrated: true, xp, level, streak, gems }),
 }));
