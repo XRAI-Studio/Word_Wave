@@ -114,68 +114,104 @@ kit in the page for identity, totals and the two standard screens, and
     service role. In the session mock mode (`NEXT_PUBLIC_TS_KIT=mock`, not production) a
     per-process in-memory mock replaces it and nothing reaches the network. Unit tests
     cover the three request shapes, the failure-to-null paths and the mock gate.
-14. `POST /api/lessons/[lessonId]/complete`: gates, SRS and `LessonProgress` exactly as
-    today; then, on the **first** completion only, `award(token, "lesson_complete",
-    { lessonId, course: course.code })` and, when that succeeded,
-    `unlock(token, "wordwave-first-lesson")` (idempotent on the portal; it checks the
-    criteria against the ledger). Replays award nothing. The perfect-lesson bonus is gone
-    (the seed has one `lesson_complete` value: 10 XP, 20 a day).
+14. `POST /api/lessons/[lessonId]/complete`: gates and SRS as today. **First completion
+    is decided atomically** (WW-P5-001): the route `create`s the `LessonProgress` row
+    (`completed: true`); success means this request won the first completion, and a
+    unique violation on `(userId, lessonId)` (Prisma `P2002`) means a replay, which only
+    refreshes `completedAt` (rows are only ever created completed, so no
+    `completed: false` state exists). The transition and the SRS writes commit in one
+    transaction before any portal call. Only the winning request calls
+    `award(token, "lesson_complete", { lessonId, course: course.code })` and, when that
+    succeeded, `unlock(token, "wordwave-first-lesson")` (idempotent on the portal; it
+    checks the criteria against the ledger). Replays award nothing. The perfect-lesson
+    bonus is gone (the seed has one `lesson_complete` value: 10 XP, 20 a day). e2e fires
+    two completions of the same lesson concurrently and asserts exactly one award.
 15. `POST /api/review/complete`: SRS as today; when at least one in-course result was
     applied, one `award(token, "review_session", { words: n, course: course.code })` per
     request, not per word (10 XP, 5 a day). Zero results award nothing.
 16. Both routes: database writes are committed **before** any portal call, and a portal
-    failure leaves them in place; the response is `{ firstCompletion?, awarded:
-    KitAwardResult | null, summary }`. After the award, both call `saveSummary` with
-    `state { rev: <learner's completed lessons, all courses> }` and `summary { headline:
-    "<n> lessons done in <course name>", percent: <completed ÷ lessons in the active
-    course, 0–100> }` so the portal launcher tile is not blank (`rev` is monotonic, which
-    the portal's revision guard requires). The decision logic (award or not, which
-    event, summary text and percent) lives in pure functions with unit tests.
-17. Only `lesson_complete` and `review_session` (and the `wordwave-first-lesson` unlock)
+    failure leaves them in place. The response carries
+    `award: { status: "awarded" | "capped" | "skipped" | "failed", result: KitAwardResult | null }`
+    (`skipped` = replay or zero results, no request made; `capped` = the portal answered
+    with `awarded_xp` 0; `failed` = the portal call resolved `null`) (WW-P5-005).
+17. Launcher summary (WW-P5-003): `User` gains `summaryRev Int @default(0)`. Every
+    summary-relevant change (lesson completion, review completion, and a course switch
+    through `POST /api/course/active`) publishes a summary: in one transaction the route
+    increments `summaryRev` (the row lock orders concurrent requests) and, after the
+    increment, reads the snapshot it summarises; then it calls `saveSummary(token,
+    { rev: summaryRev }, { headline: "<n> lessons done in <course name>", percent:
+    <completed ÷ lessons in the active course, 0–100> })`. Revisions are strictly
+    increasing per learner, so a delayed older request loses to the portal's `rev` guard
+    and cannot overwrite a newer headline; a unit test on the pure summary function and
+    an e2e step (Spanish completion, switch to Latin, stale Spanish summary replayed with
+    its older `rev`) cover it. The decision logic (award or not, which event, award
+    status, summary text and percent) lives in pure functions with unit tests.
+18. Only `lesson_complete` and `review_session` (and the `wordwave-first-lesson` unlock)
     are ever sent: exactly the `wordwave` row and achievement in the portal's
     `supabase/seed.sql` (rule 3.2); a test asserts the event names against a constant
     copied from the seed with its line cited.
 
 ### Kit, UI, headers
 
-18. `src/lib/kit.ts` byte-identical to `multiply_factors/src/lib/kit.ts` (rule 3.3). A
-    client `KitProvider` in `(main)/layout.tsx` and `welcome` boots the kit once
-    (`shouldUseMockKit()` ? `loadDevKit` : `loadRealKit`, game `"wordwave"`) and renders
-    `redirecting` ("Sending you to sign in…", when `kit.user` is null) and `kit-failed`
-    (with a "Try again" control that re-runs the boot without a reload) screens (rule
-    3.4), each with a `data-testid`.
-19. HUD: `src/lib/store.ts` hydrates XP, level, streak and gems from `kit.totals` (no
-    `/api/user` fetch for totals) and applies `awarded` from a completion response;
-    `top-bar.tsx`, `quiz.tsx`, `result-screen.tsx` show those; the result screen shows
-    "+10 XP" only when `awarded.awarded_xp > 0`, "Daily XP limit reached" when it is 0,
-    and "Progress saved; XP could not be recorded" when `awarded` is null. Quests, gems
-    earned, streak-freeze and in-app achievement lists are gone from the UI.
-    `/api/user` remains only for profile data (display name, course, lessons done).
-20. `next.config.ts`: the four standard headers on every response (rule 2.4); a permanent
+19. `src/lib/kit.ts` byte-identical to `multiply_factors/src/lib/kit.ts` (rule 3.3). A
+    client `KitProvider` in the **root** `src/app/layout.tsx` (WW-P5-002), so it covers
+    `welcome`, the `(main)` pages and the two quiz routes outside that group
+    (`/lesson/[lessonId]`, `/review/session`) and survives client navigation between
+    them. It boots the kit once per page load (`shouldUseMockKit()` ? `loadDevKit` :
+    `loadRealKit`, game `"wordwave"`) and renders `redirecting` ("Sending you to sign
+    in…", when `kit.user` is null) and `kit-failed` (with a "Try again" control that
+    re-runs the boot without a reload) screens (rule 3.4), each with a `data-testid`.
+    e2e loads both quiz routes directly (and reloads them) and sees the app, not a blank.
+20. HUD totals, one authority per mode (WW-P5-004). Production: the store hydrates XP,
+    level, streak and gems from `kit.totals` **once per page load** and afterwards only
+    applies `award.result` from completion responses (the kit never made those awards,
+    so its totals are stale after the first completion; a full reload fetches fresh
+    ones). Dev mock: the server's in-memory mock portal is the only reward state; the
+    browser mock kit (`loadDevKit`, unchanged) supplies identity and screens only, and
+    the store hydrates from `GET /api/user`'s `devTotals` field, present only when the
+    session is the mock. e2e checks the HUD after a completion, after returning to
+    `/learn`, and after a reload.
+21. Result screen and client auth (WW-P5-005, WW-P5-006). The result screen shows "+10
+    XP" for `awarded`, "Daily XP limit reached" for `capped`, "Already completed: no new
+    XP" for `skipped` on a replay (nothing for a zero-result review), and "Progress
+    saved; XP could not be recorded" for `failed`; each branch has a component test.
+    Quests, gems earned, streak-freeze and in-app achievement lists are gone from the UI.
+    Every client call to Word Wave's API goes through one `apiFetch` helper: a 401 sends
+    the browser to `https://class.travelschooling.com/login?next=<location.href>`, a 403
+    to `/waiting`; the lesson and review loaders no longer turn these into "not found" or
+    "nothing to review". Before redirecting from a completion, the unfinished submission
+    (route and body) is kept in `sessionStorage`; when the same quiz route loads again
+    after sign-in it is submitted once and removed, and the result screen shows its
+    outcome (the transition in criterion 14 makes a double submission harmless). A unit
+    test covers the pending-submission store; e2e forces a 401 on a loaded quiz (the
+    mock session honours a `ww-dev-expired` cookie in dev only) and checks the redirect
+    target and the resubmission. `/api/user` remains for profile data (display name,
+    course, lessons done) and the dev totals.
+22. `next.config.ts`: the four standard headers on every response (rule 2.4); a permanent
     redirect for hosts `scottmacscott.com` and `www.scottmacscott.com` to
     `https://wordwave.travelschooling.com/:path*` (config redirects run before the proxy,
     so `src/proxy.ts` stays byte-identical); a unit test covers both.
-21. The manifest `<link>` in the served HTML carries `crossorigin="use-credentials"`
+23. The manifest `<link>` in the served HTML carries `crossorigin="use-credentials"`
     (`/manifest.webmanifest` is gated, Word Forge finding); if Next's metadata cannot emit
     it, the link is written by hand and `src/app/manifest.ts` stays.
-22. Nothing but `public/` and app routes is served (rule 2.6): `/PLAN.md`, `/docs/...`,
+24. Nothing but `public/` and app routes is served (rule 2.6): `/PLAN.md`, `/docs/...`,
     `/prisma/schema.prisma` answer 404 live (or the gate's 307, never content).
 
 ### Repository
 
-23. `vitest` added; `test` = `vitest run`; `verify` = `prisma generate && npm run
+25. `vitest` added; `test` = `vitest run`; `verify` = `prisma generate && npm run
     typecheck && npm run lint && npm test && npm run lock:check && npm run grading:check`.
     `package.json` `name` = `wordwave`. `.env.example` lists every variable with a
     comment and no values: `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_ANON_KEY`,
     `DATABASE_URL`, `MIGRATE_DATABASE_URL`, `NEXT_PUBLIC_TS_KIT` (local only).
-24. `.github/workflows/verify.yml`: on push and pull request to `master`, the four steps of
+26. `.github/workflows/verify.yml`: on push and pull request to `master`, the four steps of
     `class-verify.yml` inlined with a comment naming it (checkout, Node 24 with npm cache,
     `npm ci`, `npm run verify`).
-25. `vercel.json` `{ "framework": "nextjs" }`; `macscott.json` `liveUrl` =
+27. `vercel.json` `{ "framework": "nextjs" }`; `macscott.json` `liveUrl` =
     `https://wordwave.travelschooling.com`, `embeddable: false`; README gains a "Deploy"
     section (rule 4.4, plus the by-hand migrate/seed and the role script) and loses the
     login/guest/Google/Hostinger text; `AGENTS.md` gains the class rules (as Factors').
-26. `scripts/e2e.ts`, two parts against a local `prisma dev` database:
+28. `scripts/e2e.ts`, two parts against a local `prisma dev` database:
     (a) production mode (`next build`, `next start`, `NODE_ENV=production`, real
     `NEXT_PUBLIC_SUPABASE_URL`): `/learn` without a cookie → 307 to the portal login with
     `next`; `/api/user` → 401 JSON; a request with `Host: scottmacscott.com` → 308 to the
@@ -188,21 +224,21 @@ kit in the page for identity, totals and the two standard screens, and
 
 ### Live
 
-27. Vercel project `wordwave` in `scottmacscott-8212s-projects`, connected to
+29. Vercel project `wordwave` in `scottmacscott-8212s-projects`, connected to
     `XRAI-Studio/Word_Wave`, Framework Next.js, Root `.`, Production Branch `master`,
     env (Production) `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_ANON_KEY`, `DATABASE_URL`;
     domain `wordwave.travelschooling.com` with a certificate.
-28. After the push: CI `verify` green; `curl -sI https://wordwave.travelschooling.com/`
+30. After the push: CI `verify` green; `curl -sI https://wordwave.travelschooling.com/`
     → 307 to `https://class.travelschooling.com/login?next=https%3A%2F%2Fwordwave.travelschooling.com%2F`
     with the four headers; `/api/user` → 401; `/_next/static/...` assets 200.
-29. `https://scottmacscott.com/` → 308 to the new host (served by the Hostinger instance's
+31. `https://scottmacscott.com/` → 308 to the new host (served by the Hostinger instance's
     own auto-deploy of `master`, see Risks); if Hostinger's build does not pick it up
     within 15 minutes, the log says so and the fix becomes a user action.
-30. Portal repo: `wordwave` row's `pending` flag removed from `scripts/check-dns.mjs`
+32. Portal repo: `wordwave` row's `pending` flag removed from `scripts/check-dns.mjs`
     (`npm run dns:check` green, all seven hosts); `docs/class-standard.md` table row
     updated; the rollout summary in its `PLAN-REVIEW-LOG.md`; the user-actions file
     updated. Showcase revalidated after the `macscott.json` change.
-31. Signed in (Chrome, if a portal session exists on this machine; otherwise a user
+33. Signed in (Chrome, if a portal session exists on this machine; otherwise a user
     action): `/learn` loads, one lesson completes, `POST rpc/award` 200 from the server
     (visible as a new `lesson_complete` ledger row), the portal launcher tile shows the
     headline.
@@ -245,7 +281,7 @@ Codex inspects after the build, per the rollout's practice.
 
 - **Hostinger auto-deploys `master`.** The push that deploys Vercel also rebuilds the
   Hostinger instance with code that has no database there. The config-level host redirect
-  (criterion 20) turns that instance into a redirector, and `prisma generate` / `next
+  (criterion 22) turns that instance into a redirector, and `prisma generate` / `next
   build` need no database (criterion 6), so its build should succeed. If it fails,
   Hostinger may keep the old build or stop: either way the fix is a user action in hPanel
   (stop the Node app and add a redirect, or disconnect auto-deploy). The old instance's
@@ -260,5 +296,5 @@ Codex inspects after the build, per the rollout's practice.
 ## Verification
 
 `npm run verify` and `npm run e2e` green locally; CI green on the push; the live checks
-of criteria 28–31; `npm run dns:check` in the portal green; each run and its output
+of criteria 30–33; `npm run dns:check` in the portal green; each run and its output
 recorded in the log with commit hashes.
