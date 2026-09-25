@@ -32,3 +32,16 @@ input (517,504 cached), 4,349 output; 194 s.
 - **WW-P5-005** replay would show a failure/cap message. *Accepted*: award status enum.
 - **WW-P5-006** expired token mid-lesson gives a generic error. *Accepted*: `apiFetch`
   redirects, pending submission kept in `sessionStorage` and resubmitted once.
+
+### Round 2 — Codex (REVISE, 2 high, 1 medium)
+
+Result `claudex-runs/claudex-liwv34zn/result.json`, same session, plan SHA256
+`cbafd1c1…5474`; usage 580,064 input (544,128 cached), 2,860 output; 113 s. WW-P5-002 to 005
+confirmed addressed.
+
+- **WW-P5-001 (high, reopened)** a caught `P2002` aborts the Postgres transaction.
+  *Accepted*: `createMany({ skipDuplicates: true })` count, SRS on the transaction client.
+- **WW-P5-007 (high)** the pending submission could replay under a different learner.
+  *Accepted*: bound to user id and course, discarded on mismatch, server 409 on an
+  `X-WordWave-Expect-User` mismatch.
+- **WW-P5-008** the unlock's gems were missing from the HUD. *Accepted*: unlock totals win.

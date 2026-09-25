@@ -115,15 +115,22 @@ kit in the page for identity, totals and the two standard screens, and
     per-process in-memory mock replaces it and nothing reaches the network. Unit tests
     cover the three request shapes, the failure-to-null paths and the mock gate.
 14. `POST /api/lessons/[lessonId]/complete`: gates and SRS as today. **First completion
-    is decided atomically** (WW-P5-001): the route `create`s the `LessonProgress` row
-    (`completed: true`); success means this request won the first completion, and a
-    unique violation on `(userId, lessonId)` (Prisma `P2002`) means a replay, which only
-    refreshes `completedAt` (rows are only ever created completed, so no
-    `completed: false` state exists). The transition and the SRS writes commit in one
-    transaction before any portal call. Only the winning request calls
+    is decided atomically** (WW-P5-001): inside one interactive transaction the route
+    inserts the `LessonProgress` row (`completed: true`) with
+    `createMany({ data: [row], skipDuplicates: true })` (Postgres `ON CONFLICT DO
+    NOTHING`, which does not abort the transaction the way a caught `P2002` would);
+    `count === 1` means this request won the first completion, `0` means a replay, which
+    then updates `completedAt` (rows are only ever created completed, so no
+    `completed: false` state exists). `applySrsResults` takes the transaction client
+    instead of the global `db`, so the transition and the SRS writes commit together
+    before any portal call. Both concurrent requests succeed; only the winner calls
     `award(token, "lesson_complete", { lessonId, course: course.code })` and, when that
     succeeded, `unlock(token, "wordwave-first-lesson")` (idempotent on the portal; it
-    checks the criteria against the ledger). Replays award nothing. The perfect-lesson
+    checks the criteria against the ledger); when the unlock succeeds its returned totals
+    (which include the achievement's gems) replace the award's totals in
+    `award.result`, keeping the award's `awarded_xp` and `level_up`; if it fails the
+    award's totals stand (WW-P5-008; e2e checks the first-lesson HUD gems without a
+    reload). Replays award nothing. The perfect-lesson
     bonus is gone (the seed has one `lesson_complete` value: 10 XP, 20 a day). e2e fires
     two completions of the same lesson concurrently and asserts exactly one award.
 15. `POST /api/review/complete`: SRS as today; when at least one in-course result was
@@ -180,10 +187,16 @@ kit in the page for identity, totals and the two standard screens, and
     the browser to `https://class.travelschooling.com/login?next=<location.href>`, a 403
     to `/waiting`; the lesson and review loaders no longer turn these into "not found" or
     "nothing to review". Before redirecting from a completion, the unfinished submission
-    (route and body) is kept in `sessionStorage`; when the same quiz route loads again
-    after sign-in it is submitted once and removed, and the result screen shows its
-    outcome (the transition in criterion 14 makes a double submission harmless). A unit
-    test covers the pending-submission store; e2e forces a 401 on a loaded quiz (the
+    (route, body, the learner's `kit.user.id` and the course code) is kept in
+    `sessionStorage`; when the same quiz route loads again after sign-in it is submitted
+    once and removed **only if** the booted kit's user id and the active course match
+    the stored ones, otherwise it is discarded unsent (WW-P5-007). The replay carries an
+    `X-WordWave-Expect-User` header and the completion routes answer 409 without
+    writing when it differs from the verified `sub`, which covers a cookie change
+    between the browser check and the POST. The result screen shows the outcome (the
+    transition in criterion 14 makes a double submission harmless). A unit
+    test covers the pending-submission store (same learner replays; another learner or
+    another course discards) and a route test covers the 409; e2e forces a 401 on a loaded quiz (the
     mock session honours a `ww-dev-expired` cookie in dev only) and checks the redirect
     target and the resubmission. `/api/user` remains for profile data (display name,
     course, lessons done) and the dev totals.
