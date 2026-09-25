@@ -1,7 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
+import { reloadForAccountChange, takeAccountChangedNotice } from "@/lib/account-change";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 import { loadDevKit, loadRealKit, shouldUseMockKit, type Kit } from "@/lib/kit";
 import { useGameStore } from "@/lib/store";
@@ -67,6 +69,39 @@ export function KitProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [attempt, hydrate]);
+
+  // Another tab may sign in to the portal as someone else; the shared cookie changes but
+  // this page's kit does not. Re-check the signed-in learner whenever the tab comes back
+  // into view and reload under the new identity if it differs (WW-P5-R3-002).
+  const readyUserId = boot.status === "ready" ? boot.kit.user?.id : undefined;
+  useEffect(() => {
+    if (!readyUserId) return;
+    if (takeAccountChangedNotice()) {
+      toast.message("You're signed in as a different learner now. The last unsaved answers were not kept.");
+    }
+    let checking = false;
+    const check = async () => {
+      if (checking || document.visibilityState !== "visible") return;
+      checking = true;
+      try {
+        const res = await apiFetch("/api/user");
+        if (res.ok) {
+          const me: UserDTO = await res.json();
+          if (me.id !== readyUserId) reloadForAccountChange();
+        }
+      } catch {
+        // A redirect is already under way, or the network blipped; the next focus retries.
+      } finally {
+        checking = false;
+      }
+    };
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [readyUserId]);
 
   if (boot.status === "ready") {
     return <KitContext.Provider value={boot.kit}>{children}</KitContext.Provider>;

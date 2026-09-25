@@ -14,7 +14,8 @@ import { useKit } from "@/components/kit-provider";
 import { RedirectingError } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
 import type { PendingSubmission } from "@/lib/pending-submission";
-import { postCompletion } from "@/lib/submit-completion";
+import { reloadForAccountChange } from "@/lib/account-change";
+import { CompletionError, postCompletion } from "@/lib/submit-completion";
 import { useGameStore } from "@/lib/store";
 import { normalizeTyped } from "@/lib/course-policy";
 import type { ChallengeDTO } from "@/lib/types";
@@ -55,6 +56,9 @@ export function Quiz({
   const [outcome, setOutcome] = useState<{ award: AwardOutcome; accuracy: number } | null>(null);
 
   // wordId -> true only if never missed this session; challengeId -> first try correct
+  // One id per quiz, kept across retries and the sign-in round trip, so the server
+  // applies this quiz's answers at most once (WW-P5-R3-001).
+  const [submissionId] = useState(() => crypto.randomUUID());
   const wordResults = useRef(new Map<string, boolean>());
   const firstTry = useRef(new Map<string, boolean>());
 
@@ -120,6 +124,11 @@ export function Quiz({
       // Session expired: postCompletion kept the answers and the browser is leaving for
       // the portal; PendingRecovery sends them when this route loads again.
       if (err instanceof RedirectingError) return;
+      // Someone else is signed in now: these answers are not theirs (WW-P5-R3-002).
+      if (err instanceof CompletionError && err.code === "user-mismatch") {
+        reloadForAccountChange();
+        return;
+      }
       toast.error("Couldn't save your progress. Check your connection and try again.");
       setStatus("correct"); // let the user hit Continue and retry
     }
@@ -138,8 +147,9 @@ export function Quiz({
               failedWordIds: entries.filter(([, ok]) => !ok).map(([id]) => id),
               correctWordIds: entries.filter(([, ok]) => ok).map(([id]) => id),
               mistakes,
+              submissionId,
             }
-          : { results: entries.map(([wordId, correct]) => ({ wordId, correct })) },
+          : { results: entries.map(([wordId, correct]) => ({ wordId, correct })), submissionId },
       userId: kit.user?.id ?? "",
       courseCode: courseCode ?? "",
       accuracy,

@@ -26,6 +26,22 @@ model User {
 
   lessonProgress LessonProgress[]
   wordReviews    WordReview[]
+  submissions    Submission[]
+}
+
+// One finished quiz (a lesson or a review session), keyed by an id the browser creates
+// once per quiz and keeps across retries and the sign-in round trip. A repeat of the same
+// id is recognised inside the completion transaction and changes nothing: no SRS writes,
+// no award; it gets back the outcome recorded for the first one (Codex WW-P5-R3-001).
+model Submission {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String
+  createdAt DateTime @default(now())
+  // JSON of the award outcome once the portal answered; null until then.
+  award     String?
+
+  @@id([userId, id])
 }
 
 // A learnable language course. The app ships Spanish (grandfathered content

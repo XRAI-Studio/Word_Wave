@@ -15,6 +15,7 @@
  * It resets the mock learner's rows first; it never touches production.
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
 import { chromium, type Page } from "playwright";
@@ -392,19 +393,22 @@ async function learnerFlowInDevMode() {
     // Lessons used below, by position after `first` (the active one), all distinct:
     // 1 concurrent completion, 2 expired session, 3 overlapping lesson and review,
     // 4 failed resend and retry, 5 course-mismatch discard, 6 refused resubmission,
-    // 7 failed profile lookup, 8 user-mismatch refusal of a kept submission.
+    // 7 failed profile lookup, 8 user-mismatch refusal of a kept submission,
+    // 9 account change during an ordinary quiz.
     const at = (n: number) => lessons[lessons.indexOf(first) + n];
-    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson] =
-      [1, 2, 3, 4, 5, 6, 7, 8].map(at);
+    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson, switchLesson] =
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map(at);
     const setPending = (p: object) =>
       page.evaluate((v) => sessionStorage.setItem("wordwave:pending-submission", JSON.stringify(v)), p);
     const pendingStored = () => page.evaluate(() => sessionStorage.getItem("wordwave:pending-submission"));
 
     // --- concurrent double completion of a new lesson: one award
-    const body = { failedWordIds: [], correctWordIds: [], mistakes: 0 };
+    // Two different quizzes (two submission ids) for the same lesson at once.
+    const lessonBody = () => ({ failedWordIds: [], correctWordIds: [], mistakes: 0, submissionId: randomUUID() });
+    const body = lessonBody();
     const [a, b] = await Promise.all([
-      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, body),
-      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, body),
+      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, lessonBody()),
+      post<{ firstCompletion: boolean; award: Award }>(`/api/lessons/${second.id}/complete`, lessonBody()),
     ]);
     check([a, b].filter((r) => r.firstCompletion).length === 1, "concurrent completions: exactly one first completion");
     check([a, b].filter((r) => r.award.status === "awarded").length === 1, "concurrent completions: exactly one award");
@@ -433,18 +437,30 @@ async function learnerFlowInDevMode() {
     // --- a review that schedules nothing earns nothing (WW-INSPECT-001)
     const reviewed = new Set((await db.wordReview.findMany({ where: { userId: MOCK_USER } })).map((r) => r.wordId));
     const unscheduled = (await db.word.findMany({ where: { courseId: "es" }, take: 50 })).find((w) => !reviewed.has(w.id))!;
-    const empty = await post<{ award: Award }>("/api/review/complete", { results: [{ wordId: unscheduled.id, correct: true }] });
+    const empty = await post<{ award: Award }>("/api/review/complete", { results: [{ wordId: unscheduled.id, correct: true }], submissionId: randomUUID() });
     check(empty.award.status === "skipped", `a correct answer for an unscheduled word is not a review (got ${empty.award.status})`);
 
     // --- overlapping lesson and review with opposing results for one word (WW-INSPECT-004)
     const word = missed[0].wordId;
     const lapsesBefore = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
     await Promise.all([
-      post(`/api/lessons/${overlapLesson.id}/complete`, { failedWordIds: [], correctWordIds: [word], mistakes: 0 }),
-      post("/api/review/complete", { results: [{ wordId: word, correct: false }] }),
+      post(`/api/lessons/${overlapLesson.id}/complete`, { failedWordIds: [], correctWordIds: [word], mistakes: 0, submissionId: randomUUID() }),
+      post("/api/review/complete", { results: [{ wordId: word, correct: false }], submissionId: randomUUID() }),
     ]);
     const lapsesAfter = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
     check(lapsesAfter === lapsesBefore + 1, `the concurrent miss is kept (lapses ${lapsesBefore} -> ${lapsesAfter})`);
+
+    // --- one quiz sent twice is applied once (WW-P5-R3-001)
+    const once = { results: [{ wordId: word, correct: false }], submissionId: randomUUID() };
+    const xpBeforeTwice = (await json<UserBody>("/api/user")).devTotals?.xp ?? 0;
+    const firstSend = await post<{ award: Award; duplicate?: boolean }>("/api/review/complete", once);
+    const lapsesOnce = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    const secondSend = await post<{ award: Award; duplicate?: boolean }>("/api/review/complete", once);
+    const lapsesTwice = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    check(firstSend.award.status === "awarded" && !firstSend.duplicate, "the first send of a review is applied and awarded");
+    check(secondSend.duplicate === true && secondSend.award.status === "awarded", "the repeat is recognised and reports the recorded outcome");
+    check(lapsesTwice === lapsesOnce, `the repeat changes no schedule (lapses ${lapsesOnce} -> ${lapsesTwice})`);
+    check((await json<UserBody>("/api/user")).devTotals?.xp === xpBeforeTwice + 10, "and awards no second time");
 
     // --- a kept review submission is sent even when nothing is due any more (WW-INSPECT-003)
     await db.wordReview.updateMany({ where: { userId: MOCK_USER }, data: { dueAt: new Date(Date.now() + 86_400_000) } });
@@ -452,7 +468,7 @@ async function learnerFlowInDevMode() {
     await setPending({
       path: "/review/session",
       url: "/api/review/complete",
-      body: { results: [{ wordId: word, correct: true }] },
+      body: { results: [{ wordId: word, correct: true }], submissionId: randomUUID() },
       userId: MOCK_USER,
       courseCode: "es",
       accuracy: 1,
@@ -462,8 +478,7 @@ async function learnerFlowInDevMode() {
     check((await pendingStored()) === null, "and removed once sent");
 
     // --- a failed resend keeps the exact answers and retries them (WW-INSPECT-002)
-    const retryBody = { failedWordIds: [], correctWordIds: [], mistakes: 0 };
-    await setPending({ path: `/lesson/${retryLesson.id}`, url: `/api/lessons/${retryLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await setPending({ path: `/lesson/${retryLesson.id}`, url: `/api/lessons/${retryLesson.id}/complete`, body: lessonBody(), userId: MOCK_USER, courseCode: "es", accuracy: 1 });
     await page.route(`**/api/lessons/${retryLesson.id}/complete`, (route) => route.fulfill({ status: 500, body: "{}" }));
     await page.goto(`${base}/lesson/${retryLesson.id}`);
     await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
@@ -480,7 +495,7 @@ async function learnerFlowInDevMode() {
     check((await json<UserBody>("/api/user")).devTotals?.xp === xpAfterRetry, "a reload after the retry sends nothing again");
 
     // --- a failed profile lookup keeps the answers and retries (WW-P5-R2-002)
-    await setPending({ path: `/lesson/${lookupLesson.id}`, url: `/api/lessons/${lookupLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await setPending({ path: `/lesson/${lookupLesson.id}`, url: `/api/lessons/${lookupLesson.id}/complete`, body: lessonBody(), userId: MOCK_USER, courseCode: "es", accuracy: 1 });
     await page.route("**/api/user", (route) => route.fulfill({ status: 503, body: "{}" }));
     await page.goto(`${base}/lesson/${lookupLesson.id}`);
     await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
@@ -491,7 +506,7 @@ async function learnerFlowInDevMode() {
     check((await pendingStored()) === null, "and removes it once sent");
 
     // --- a user-mismatch refusal discards the kept submission (WW-P5-R2-003)
-    await setPending({ path: `/lesson/${refusedLesson.id}`, url: `/api/lessons/${refusedLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await setPending({ path: `/lesson/${refusedLesson.id}`, url: `/api/lessons/${refusedLesson.id}/complete`, body: lessonBody(), userId: MOCK_USER, courseCode: "es", accuracy: 1 });
     await page.route(`**/api/lessons/${refusedLesson.id}/complete`, (route) =>
       route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "user-mismatch" }) })
     );
@@ -501,6 +516,55 @@ async function learnerFlowInDevMode() {
     await page.unroute(`**/api/lessons/${refusedLesson.id}/complete`);
     check((await pendingStored()) === null, "a user-mismatch refusal discards the submission, no retry offered");
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: refusedLesson.id } })) === 0, "and nothing was saved");
+
+    // --- a kept review whose first send committed but lost its response (WW-P5-R3-001)
+    const lost = { results: [{ wordId: word, correct: false }], submissionId: randomUUID() };
+    const lapsesBeforeLost = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    const xpBeforeLost = (await json<UserBody>("/api/user")).devTotals?.xp ?? 0;
+    await setPending({ path: "/review/session", url: "/api/review/complete", body: lost, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.route(
+      "**/api/review/complete",
+      async (route) => {
+        await route.fetch(); // the server applies it...
+        await route.abort(); // ...and the browser never hears back
+      },
+      { times: 1 }
+    );
+    await page.goto(base + "/review/session");
+    await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
+    await page.getByRole("button", { name: "Try again" }).click();
+    check((await resultStatus(page)) === "awarded", "Try again after a lost response shows the recorded outcome");
+    const lapsesAfterLost = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
+    check(lapsesAfterLost === lapsesBeforeLost + 1, `the lost-response review was applied once (lapses ${lapsesBeforeLost} -> ${lapsesAfterLost})`);
+    check((await json<UserBody>("/api/user")).devTotals?.xp === xpBeforeLost + 10, "and awarded once");
+    check((await pendingStored()) === null, "and the kept submission is gone");
+
+    // --- another learner signs in while a quiz is open (WW-P5-R3-002)
+    const switchData = await json<{ challenges: Challenge[] }>(`/api/lessons/${switchLesson.id}`);
+    await page.goto(`${base}/lesson/${switchLesson.id}`);
+    for (const ch of switchData.challenges.slice(0, -1)) await solveChallenge(page, ch, false);
+    await page.route(
+      `**/api/lessons/${switchLesson.id}/complete`,
+      (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "user-mismatch" }) }),
+      { times: 1 }
+    );
+    await solveChallenge(page, switchData.challenges[switchData.challenges.length - 1], false);
+    await page.getByText("signed in as a different learner").waitFor({ timeout: 20_000 });
+    check(true, "a user-mismatch in an ordinary quiz reloads under the new identity and says so");
+    await page.getByRole("heading", { name: switchData.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: switchLesson.id } })) === 0, "the old learner's answers were not saved");
+    check((await pendingStored()) === null, "and not kept for anyone");
+
+    await page.goto(base + "/learn");
+    await hudXp(page);
+    await page.route(
+      "**/api/user",
+      (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "someone-else", displayName: "B", createdAt: new Date().toISOString(), lessonsCompleted: 0, activeCourseName: "Spanish", activeCourseCode: "es" }) }),
+      { times: 1 }
+    );
+    await Promise.all([page.waitForEvent("load"), page.evaluate(() => window.dispatchEvent(new Event("focus")))]);
+    await page.getByText("signed in as a different learner").waitFor({ timeout: 20_000 });
+    check(true, "coming back to the tab after another learner signed in reloads the page");
 
     // --- expired session mid-lesson: redirect, keep, resubmit once after sign-in
     const thirdLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${third.id}`);
@@ -541,7 +605,7 @@ async function learnerFlowInDevMode() {
     // --- a kept Spanish submission is discarded, not replayed, once the course is Latin
     // (WW-INSPECT-003), even though the Spanish lesson no longer loads.
     await page.goto(base + "/learn");
-    await setPending({ path: `/lesson/${otherCourseLesson.id}`, url: `/api/lessons/${otherCourseLesson.id}/complete`, body: retryBody, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await setPending({ path: `/lesson/${otherCourseLesson.id}`, url: `/api/lessons/${otherCourseLesson.id}/complete`, body: lessonBody(), userId: MOCK_USER, courseCode: "es", accuracy: 1 });
     await page.goto(`${base}/lesson/${otherCourseLesson.id}`);
     await page.getByText("This lesson doesn't exist.").waitFor({ timeout: 20_000 });
     check((await pendingStored()) === null, "a submission for another course is discarded");

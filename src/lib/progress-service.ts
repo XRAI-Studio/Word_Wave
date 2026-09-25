@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db, DB_SCHEMA } from "@/lib/db";
-import { launcherSummary } from "@/lib/completion";
+import { launcherSummary, type AwardOutcome } from "@/lib/completion";
 import { applySrsResults, type WordResult } from "@/lib/review-service";
 import type { Learner, LauncherSummary, PortalClient } from "@/lib/portal";
 
@@ -18,6 +18,32 @@ async function lockLearner(tx: Prisma.TransactionClient, userId: string): Promis
 }
 
 /**
+ * Records this submission's id for the learner. False means the same quiz was already
+ * submitted (a retry after a lost response, or a reload during recovery): the caller then
+ * writes nothing and returns the recorded outcome (Codex WW-P5-R3-001).
+ */
+async function claimSubmission(tx: Prisma.TransactionClient, userId: string, submissionId: string): Promise<boolean> {
+  const r = await tx.submission.createMany({ data: [{ userId, id: submissionId }], skipDuplicates: true });
+  return r.count === 1;
+}
+
+/** A repeat of an already-applied submission, with the outcome recorded for the first one. */
+export interface Duplicate {
+  duplicate: true;
+  recorded: AwardOutcome | null;
+}
+
+async function recordedOutcome(tx: Prisma.TransactionClient, userId: string, submissionId: string): Promise<Duplicate> {
+  const row = await tx.submission.findUnique({ where: { userId_id: { userId, id: submissionId } } });
+  return { duplicate: true, recorded: row?.award ? (JSON.parse(row.award) as AwardOutcome) : null };
+}
+
+/** Stores the award outcome against the submission, for any repeat of it to report. */
+export async function recordOutcome(userId: string, submissionId: string, award: AwardOutcome): Promise<void> {
+  await db.submission.update({ where: { userId_id: { userId, id: submissionId } }, data: { award: JSON.stringify(award) } });
+}
+
+/**
  * Marks a lesson complete and applies its SRS results in one transaction. The first
  * completion is decided by the insert itself (ON CONFLICT DO NOTHING, which leaves the
  * transaction usable, unlike a caught unique violation): of two concurrent submissions
@@ -27,10 +53,12 @@ export async function completeLesson(
   userId: string,
   lessonId: string,
   results: WordResult[],
+  submissionId: string,
   now = new Date()
-): Promise<{ firstCompletion: boolean }> {
+): Promise<{ duplicate: false; firstCompletion: boolean } | Duplicate> {
   return db.$transaction(async (tx) => {
     await lockLearner(tx, userId);
+    if (!(await claimSubmission(tx, userId, submissionId))) return recordedOutcome(tx, userId, submissionId);
     const inserted = await tx.lessonProgress.createMany({
       data: [{ userId, lessonId, completed: true, completedAt: now }],
       skipDuplicates: true,
@@ -40,15 +68,21 @@ export async function completeLesson(
       await tx.lessonProgress.updateMany({ where: { userId, lessonId }, data: { completedAt: now } });
     }
     await applySrsResults(tx, userId, results, now);
-    return { firstCompletion };
+    return { duplicate: false as const, firstCompletion };
   }, TX);
 }
 
-/** Applies a review session's SRS results; returns how many words were actually scheduled. */
-export async function completeReview(userId: string, results: WordResult[], now = new Date()): Promise<number> {
+/** Applies a review session's SRS results once per submission; returns how many words were scheduled. */
+export async function completeReview(
+  userId: string,
+  results: WordResult[],
+  submissionId: string,
+  now = new Date()
+): Promise<{ duplicate: false; applied: number } | Duplicate> {
   return db.$transaction(async (tx) => {
     await lockLearner(tx, userId);
-    return applySrsResults(tx, userId, results, now);
+    if (!(await claimSubmission(tx, userId, submissionId))) return recordedOutcome(tx, userId, submissionId);
+    return { duplicate: false as const, applied: await applySrsResults(tx, userId, results, now) };
   }, TX);
 }
 

@@ -5,12 +5,15 @@ import { authFailure, expectedUserMismatch } from "@/lib/api-errors";
 import { awardOutcome, SKIPPED, withUnlock, type AwardOutcome } from "@/lib/completion";
 import { db } from "@/lib/db";
 import { FIRST_LESSON_ACHIEVEMENT, portalFor } from "@/lib/portal";
-import { completeLesson, publishSummary } from "@/lib/progress-service";
+import { completeLesson, publishSummary, recordOutcome } from "@/lib/progress-service";
 
 const bodySchema = z.object({
   failedWordIds: z.array(z.string()),
   correctWordIds: z.array(z.string()),
   mistakes: z.number().int().min(0).max(100).default(0),
+  // Created once per quiz in the browser and kept across retries (criterion 14's
+  // transition covers two different quizzes; this covers one quiz sent twice).
+  submissionId: z.string().uuid(),
 });
 
 export async function POST(
@@ -32,7 +35,7 @@ export async function POST(
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
-  const { failedWordIds, correctWordIds } = parsed.data;
+  const { failedWordIds, correctWordIds, submissionId } = parsed.data;
 
   // Gate the lesson to the active course. This is also the race guard: if the
   // learner switched course mid-lesson, the lesson no longer matches the active
@@ -63,7 +66,11 @@ export async function POST(
 
   // Progress and SRS commit first; the ledger is credited afterwards, and a portal
   // failure leaves the learner's progress in place.
-  const { firstCompletion } = await completeLesson(user.id, lessonId, results);
+  const applied = await completeLesson(user.id, lessonId, results, submissionId);
+  if (applied.duplicate) {
+    return NextResponse.json({ duplicate: true, firstCompletion: false, award: applied.recorded ?? SKIPPED });
+  }
+  const { firstCompletion } = applied;
 
   const portal = portalFor();
   const who = { token, userId: user.id };
@@ -74,6 +81,7 @@ export async function POST(
       award = { ...award, result: withUnlock(award.result, await portal.unlock(who, FIRST_LESSON_ACHIEVEMENT)) };
     }
   }
+  await recordOutcome(user.id, submissionId, award);
   await publishSummary(portal, who);
 
   return NextResponse.json({ firstCompletion, award });

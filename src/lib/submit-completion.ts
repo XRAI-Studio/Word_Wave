@@ -4,6 +4,8 @@ import { savePending, type PendingSubmission } from "@/lib/pending-submission";
 
 /** What both completion routes return (work order criterion 16). */
 export interface CompletionResponse {
+  /** A repeat of an already-applied submission: nothing was written again. */
+  duplicate?: boolean;
   firstCompletion?: boolean;
   award: AwardOutcome;
 }

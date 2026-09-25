@@ -253,3 +253,32 @@ suite rewritten for peek/clear/belongsTo); Spanish lock OK; grading checks passe
 `npm run e2e`: 75 checks passed (26 in part a, 49 in part b; new: a retry removes the
 kept submission and a reload sends nothing again; a 503 profile lookup keeps it and Try
 again sends; a `user-mismatch` 409 discards it and saves nothing).
+
+## Inspection 3 — Codex (REVISE, 2 medium)
+
+Runner result `claudex-runs/claudex-wzdgi8ca/result.json`, fresh session
+`01a0daaa-d400-7e81-acb6-f9a827e8d97a`, base `a70ebfa`, inspected tree `f896055`; usage
+2,806,026 input (2,565,888 cached), 7,122 output; 289 s. Both accepted; fix round 3:
+
+- **WW-P5-R3-001** a submission whose first send committed but whose response was lost
+  (or a reload mid-send) was applied again: SRS twice and a second `review_session`
+  award. *Fixed:* every quiz carries a `submissionId` (a UUID created once per quiz in the
+  browser, kept across retries and the sign-in round trip; required by both routes).
+  New table `Submission (userId, id)` with the recorded award outcome (migration
+  `20260925222918_submission_ids`, applied to production before the code shipped). Inside
+  the completion transaction, after the learner lock, the id is claimed with
+  `createMany({ skipDuplicates })`; a repeat writes nothing, awards nothing, and returns
+  `{ duplicate: true, award: <recorded outcome or skipped> }`. e2e: the same review sent
+  twice changes the schedule once and awards once; a kept review whose first send
+  reached the server but lost its response shows the recorded outcome on Try again, with
+  lapses and XP moved once.
+- **WW-P5-R3-002** an account switch in another tab left the open page on the old
+  identity; ordinary quiz submissions got 409 `user-mismatch` forever. *Fixed:* a
+  `user-mismatch` in the quiz reloads the page under the new identity and drops the old
+  learner's answers (`src/lib/account-change.ts`), with a notice after the reload; the
+  kit provider also re-checks `/api/user` when the tab regains focus or visibility and
+  reloads if the learner differs. e2e: both paths (409 during a quiz; focus after a
+  different learner is reported).
+
+Proofs after fix round 3: `npm run verify` 14 files / 86 tests; Spanish lock OK; grading
+checks passed. `npm run e2e`: 87 checks passed (26 in part a, 61 in part b).

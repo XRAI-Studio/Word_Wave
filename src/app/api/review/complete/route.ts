@@ -5,10 +5,12 @@ import { authFailure, expectedUserMismatch } from "@/lib/api-errors";
 import { awardOutcome, shouldAwardReview, SKIPPED, type AwardOutcome } from "@/lib/completion";
 import { db } from "@/lib/db";
 import { portalFor } from "@/lib/portal";
-import { completeReview, publishSummary } from "@/lib/progress-service";
+import { completeReview, publishSummary, recordOutcome } from "@/lib/progress-service";
 
 const bodySchema = z.object({
   results: z.array(z.object({ wordId: z.string(), correct: z.boolean() })),
+  // One id per review session, kept across retries: a repeat applies nothing twice.
+  submissionId: z.string().uuid(),
 });
 
 export async function POST(req: Request) {
@@ -38,7 +40,11 @@ export async function POST(req: Request) {
   );
   const results = parsed.data.results.filter((r) => owned.has(r.wordId));
 
-  const applied = await completeReview(user.id, results);
+  const outcome = await completeReview(user.id, results, parsed.data.submissionId);
+  if (outcome.duplicate) {
+    return NextResponse.json({ duplicate: true, award: outcome.recorded ?? SKIPPED });
+  }
+  const { applied } = outcome;
 
   // One `review_session` award per session, not per word (seed: 10 XP, 5 a day), and
   // only when the SRS scheduled something (WW-INSPECT-001).
@@ -47,6 +53,7 @@ export async function POST(req: Request) {
   let award: AwardOutcome = SKIPPED;
   if (shouldAwardReview(applied)) {
     award = awardOutcome(await portal.award(who, "review_session", { words: applied, course: course.code }));
+    await recordOutcome(user.id, parsed.data.submissionId, award);
     await publishSummary(portal, who);
   }
 
