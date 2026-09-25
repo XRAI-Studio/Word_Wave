@@ -68,7 +68,10 @@ export async function POST(
   // failure leaves the learner's progress in place.
   const applied = await completeLesson(user.id, lessonId, results, submissionId);
   if (applied.duplicate) {
-    return NextResponse.json({ duplicate: true, firstCompletion: false, award: applied.recorded ?? SKIPPED });
+    // Still in flight: ask again shortly. Otherwise the first send's recorded outcome;
+    // the browser must not apply its (historical) totals to the HUD.
+    if (applied.pending) return NextResponse.json({ duplicate: true, pending: true }, { status: 202 });
+    return NextResponse.json({ duplicate: true, firstCompletion: false, award: applied.recorded });
   }
   const { firstCompletion } = applied;
 

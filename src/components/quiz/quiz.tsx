@@ -117,7 +117,8 @@ export function Quiz({
     setStatus("submitting");
     try {
       const data = await postCompletion(p);
-      if (data.award.result) applyAward(data.award.result);
+      // A repeat carries the first send's historical totals; the HUD keeps the current ones.
+      if (data.award.result && !data.duplicate) applyAward(data.award.result);
       setOutcome({ award: data.award, accuracy: p.accuracy });
       setStatus("done");
     } catch (err) {

@@ -42,7 +42,8 @@ export async function POST(req: Request) {
 
   const outcome = await completeReview(user.id, results, parsed.data.submissionId);
   if (outcome.duplicate) {
-    return NextResponse.json({ duplicate: true, award: outcome.recorded ?? SKIPPED });
+    if (outcome.pending) return NextResponse.json({ duplicate: true, pending: true }, { status: 202 });
+    return NextResponse.json({ duplicate: true, award: outcome.recorded });
   }
   const { applied } = outcome;
 
@@ -53,9 +54,10 @@ export async function POST(req: Request) {
   let award: AwardOutcome = SKIPPED;
   if (shouldAwardReview(applied)) {
     award = awardOutcome(await portal.award(who, "review_session", { words: applied, course: course.code }));
-    await recordOutcome(user.id, parsed.data.submissionId, award);
-    await publishSummary(portal, who);
   }
+  // Recorded whatever it is (skipped included), so a repeat never looks unfinished.
+  await recordOutcome(user.id, parsed.data.submissionId, award);
+  if (shouldAwardReview(applied)) await publishSummary(portal, who);
 
   return NextResponse.json({ award });
 }

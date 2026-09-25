@@ -394,10 +394,10 @@ async function learnerFlowInDevMode() {
     // 1 concurrent completion, 2 expired session, 3 overlapping lesson and review,
     // 4 failed resend and retry, 5 course-mismatch discard, 6 refused resubmission,
     // 7 failed profile lookup, 8 user-mismatch refusal of a kept submission,
-    // 9 account change during an ordinary quiz.
+    // 9 account change during an ordinary quiz, 10 an award made in between.
     const at = (n: number) => lessons[lessons.indexOf(first) + n];
-    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson, switchLesson] =
-      [1, 2, 3, 4, 5, 6, 7, 8, 9].map(at);
+    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson, switchLesson, betweenLesson] =
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(at);
     const setPending = (p: object) =>
       page.evaluate((v) => sessionStorage.setItem("wordwave:pending-submission", JSON.stringify(v)), p);
     const pendingStored = () => page.evaluate(() => sessionStorage.getItem("wordwave:pending-submission"));
@@ -532,12 +532,43 @@ async function learnerFlowInDevMode() {
     );
     await page.goto(base + "/review/session");
     await page.getByTestId("recovery-failed").waitFor({ timeout: 20_000 });
-    await page.getByRole("button", { name: "Try again" }).click();
-    check((await resultStatus(page)) === "awarded", "Try again after a lost response shows the recorded outcome");
+    // Another award lands before the learner retries; then they reload mid-recovery.
+    await post(`/api/lessons/${betweenLesson.id}/complete`, lessonBody());
+    await page.reload();
+    check((await resultStatus(page)) === "awarded", "a reload after a lost response shows the recorded outcome");
     const lapsesAfterLost = (await db.wordReview.findFirstOrThrow({ where: { userId: MOCK_USER, wordId: word } })).lapses;
     check(lapsesAfterLost === lapsesBeforeLost + 1, `the lost-response review was applied once (lapses ${lapsesBeforeLost} -> ${lapsesAfterLost})`);
-    check((await json<UserBody>("/api/user")).devTotals?.xp === xpBeforeLost + 10, "and awarded once");
+    const xpNow = (await json<UserBody>("/api/user")).devTotals?.xp;
+    check(xpNow === xpBeforeLost + 20, `and awarded once, beside the award in between (xp ${xpBeforeLost} -> ${xpNow})`);
     check((await pendingStored()) === null, "and the kept submission is gone");
+    await page.getByRole("button", { name: "Back to the path" }).click();
+    await page.waitForURL("**/learn");
+    check((await hudXp(page)) === xpNow, `the repeat's historical totals do not rewind the HUD (WW-P5-R4-002; HUD ${xpNow})`);
+
+    // --- a repeat of a send that is still finishing waits for its outcome (WW-P5-R4-001)
+    const recordedAward = { status: "awarded", result: { awarded_xp: 10, xp: xpNow, gems: 5, level: 1, streak: 1, level_up: false, new_achievements: [] } };
+    const inflight = randomUUID();
+    await db.submission.create({ data: { userId: MOCK_USER, id: inflight } });
+    const early = await fetch(base + "/api/review/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ results: [{ wordId: word, correct: true }], submissionId: inflight }),
+    });
+    check(early.status === 202, `a repeat while the first send is unfinished answers 202 (got ${early.status})`);
+    await setPending({ path: "/review/session", url: "/api/review/complete", body: { results: [{ wordId: word, correct: true }], submissionId: inflight }, userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    await page.goto(base + "/review/session");
+    await page.getByText("Saving your answers").waitFor({ timeout: 20_000 });
+    await db.submission.update({ where: { userId_id: { userId: MOCK_USER, id: inflight } }, data: { award: JSON.stringify(recordedAward) } });
+    check((await resultStatus(page)) === "awarded", "the page keeps asking and shows the outcome once it is recorded");
+    check((await pendingStored()) === null, "and then lets the submission go");
+
+    // --- an abandoned send is finalised as failed, never re-awarded
+    const abandoned = randomUUID();
+    await db.submission.create({ data: { userId: MOCK_USER, id: abandoned, createdAt: new Date(Date.now() - 120_000) } });
+    const xpBeforeAbandoned = (await json<UserBody>("/api/user")).devTotals?.xp;
+    const late = await post<{ duplicate?: boolean; award: Award }>("/api/review/complete", { results: [{ wordId: word, correct: true }], submissionId: abandoned });
+    check(late.duplicate === true && late.award.status === "failed", `an abandoned send reports failed (got ${late.award.status})`);
+    check((await json<UserBody>("/api/user")).devTotals?.xp === xpBeforeAbandoned, "and awards nothing");
 
     // --- another learner signs in while a quiz is open (WW-P5-R3-002)
     const switchData = await json<{ challenges: Challenge[] }>(`/api/lessons/${switchLesson.id}`);

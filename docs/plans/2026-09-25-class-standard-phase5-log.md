@@ -282,3 +282,28 @@ Runner result `claudex-runs/claudex-wzdgi8ca/result.json`, fresh session
 
 Proofs after fix round 3: `npm run verify` 14 files / 86 tests; Spanish lock OK; grading
 checks passed. `npm run e2e`: 87 checks passed (26 in part a, 61 in part b).
+
+## Inspection 4 — Codex (REVISE, 2 medium)
+
+Runner result `claudex-runs/claudex-tcna_3lc/result.json`, fresh session
+`01a0dab4-340e-7c50-81fd-d07d60b4fe43`, base `a70ebfa`, inspected tree `ce17974`; usage
+1,670,621 input (1,452,416 cached), 4,827 output; 196 s. Both accepted; fix round 4:
+
+- **WW-P5-R4-001** a repeat arriving while the first send's portal call was still in
+  flight found no recorded outcome and was answered as a final "skipped". *Fixed:* such
+  a repeat answers **202** `{ duplicate, pending }`; `postCompletion` asks again every
+  1.5 s (up to 8 times, then a retryable failure that keeps the submission). A claim
+  still without an outcome after 60 s (`ABANDONED_AFTER_MS`; the portal call times out at
+  5 s) is taken as abandoned and finalised as `failed`, never re-awarded (the award RPC
+  is not idempotent). The review route now records its outcome in every case, `skipped`
+  included, so a finished review never looks unfinished. e2e: a pre-claimed submission
+  answers 202; a page recovering it shows "Saving your answers" and then the outcome
+  once it is recorded; a claim two minutes old reports `failed` and awards nothing.
+- **WW-P5-R4-002** a repeat's historical totals overwrote the HUD. *Fixed:* duplicate
+  responses never reach `applyAward` (quiz or recovery); the result screen's gems and
+  streak come from the HUD store, its XP-earned from the award. e2e: lost response, an
+  award in between, reload mid-recovery → the recorded outcome shows and the HUD stays
+  at the current total.
+
+Proofs after fix round 4: `npm run verify` 14 files / 86 tests; Spanish lock OK; grading
+checks passed. `npm run e2e`: 93 checks passed (26 in part a, 67 in part b).

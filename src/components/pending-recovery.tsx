@@ -59,7 +59,9 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
     try {
       const data = await postCompletion(pending);
       clearPending(storage, path);
-      if (data.award.result) applyAward(data.award.result);
+      // A repeat carries the first send's historical totals; the HUD keeps the current
+      // ones, hydrated fresh when this page loaded (WW-P5-R4-002).
+      if (data.award.result && !data.duplicate) applyAward(data.award.result);
       setState({ kind: "done", award: data.award, accuracy: pending.accuracy });
     } catch (err) {
       if (err instanceof RedirectingError) return;

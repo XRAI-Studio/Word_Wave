@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Award, Flame, Gem, Target, Zap } from "lucide-react";
 import { ChunkyButton } from "@/components/chunky-button";
 import type { AwardOutcome } from "@/lib/completion";
+import { useGameStore } from "@/lib/store";
 
 /** The line under the XP tile for each award status (work order criterion 21). */
 export function awardMessage(award: AwardOutcome, mode: "lesson" | "review"): string | null {
@@ -32,6 +33,9 @@ export function ResultScreen({
 }) {
   const router = useRouter();
   const totals = award.result;
+  // Gems and streak are the learner's current ones (the HUD's), not the award's snapshot,
+  // which for a repeated submission is historical (WW-P5-R4-002).
+  const { gems, streak, hydrated } = useGameStore();
   const message = awardMessage(award, mode);
 
   return (
@@ -49,12 +53,12 @@ export function ResultScreen({
         </div>
         <div className="rounded-2xl border-b-4 border-brand bg-brand-soft px-3 py-4">
           <Gem className="mx-auto size-6 fill-current text-brand" aria-hidden />
-          <p className="mt-1 font-display text-xl font-extrabold">{totals?.gems ?? "–"}</p>
+          <p className="mt-1 font-display text-xl font-extrabold">{hydrated ? gems : "–"}</p>
           <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">Gems</p>
         </div>
         <div className="rounded-2xl border-b-4 border-line bg-white px-3 py-4">
           <Flame className="mx-auto size-6 fill-current text-flame" aria-hidden />
-          <p className="mt-1 font-display text-xl font-extrabold">{totals?.streak ?? "–"}</p>
+          <p className="mt-1 font-display text-xl font-extrabold">{hydrated ? streak : "–"}</p>
           <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">Day streak</p>
         </div>
         <div className="rounded-2xl border-b-4 border-line bg-white px-3 py-4">

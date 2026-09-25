@@ -27,15 +27,31 @@ async function claimSubmission(tx: Prisma.TransactionClient, userId: string, sub
   return r.count === 1;
 }
 
-/** A repeat of an already-applied submission, with the outcome recorded for the first one. */
-export interface Duplicate {
-  duplicate: true;
-  recorded: AwardOutcome | null;
-}
+/**
+ * A repeat of an already-applied submission. `pending` means the first send is still
+ * between its commit and its recorded outcome (its portal call in flight): the caller
+ * answers 202 and the browser asks again (Codex WW-P5-R4-001).
+ */
+export type Duplicate =
+  | { duplicate: true; pending: true }
+  | { duplicate: true; pending: false; recorded: AwardOutcome };
+
+/**
+ * How long a claimed submission may stay without an outcome before it is taken as
+ * abandoned (the first request died between its commit and its portal call). It is then
+ * finalised as `failed`, never retried: the award RPC is not idempotent, and progress was
+ * already committed. The portal call itself times out after 5 s.
+ */
+export const ABANDONED_AFTER_MS = 60_000;
 
 async function recordedOutcome(tx: Prisma.TransactionClient, userId: string, submissionId: string): Promise<Duplicate> {
-  const row = await tx.submission.findUnique({ where: { userId_id: { userId, id: submissionId } } });
-  return { duplicate: true, recorded: row?.award ? (JSON.parse(row.award) as AwardOutcome) : null };
+  const key = { userId_id: { userId, id: submissionId } };
+  const row = await tx.submission.findUniqueOrThrow({ where: key });
+  if (row.award) return { duplicate: true, pending: false, recorded: JSON.parse(row.award) as AwardOutcome };
+  if (Date.now() - row.createdAt.getTime() < ABANDONED_AFTER_MS) return { duplicate: true, pending: true };
+  const failed: AwardOutcome = { status: "failed", result: null };
+  await tx.submission.update({ where: key, data: { award: JSON.stringify(failed) } });
+  return { duplicate: true, pending: false, recorded: failed };
 }
 
 /** Stores the award outcome against the submission, for any repeat of it to report. */
