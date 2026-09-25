@@ -30,13 +30,13 @@ Ships with two courses for English speakers (counts from the seed):
 ```bash
 npm install
 cp .env.example .env    # then fill in the local values below
-npm run db:dev          # starts a local Postgres (prisma dev); put its TCP URL in DATABASE_URL
+npm run db:dev          # local Postgres 17 on :54329 (leave it running; data in .pgdata/)
 npx prisma migrate deploy
 npm run db:seed         # loads the Spanish + Latin courses (idempotent, ~4 minutes)
 npm run dev
 ```
 
-Locally `.env` holds `DATABASE_URL` (the `prisma dev` URL), `NEXT_PUBLIC_SUPABASE_URL` and
+Locally `.env` holds `DATABASE_URL` (the URL `npm run db:dev` prints), `NEXT_PUBLIC_SUPABASE_URL` and
 `NEXT_PUBLIC_TS_KIT=mock`. The mock flag gives you a signed-in "Dev Learner", the mock kit
 in the browser, and an in-memory mock of the school ledger in the server process, so
 nothing reaches the portal. Open http://localhost:3000; a new learner lands on the course

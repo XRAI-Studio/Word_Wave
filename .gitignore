@@ -48,3 +48,6 @@ next-env.d.ts
 
 # e2e screenshots
 /*.png
+
+# local Postgres (npm run db:dev)
+/.pgdata

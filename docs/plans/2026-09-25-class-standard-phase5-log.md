@@ -58,3 +58,99 @@ privileges, pooler compatibility, deployment, DNS and signed-in behaviour unveri
 **Plan review: 3 rounds, approved.** Pre-build commit for inspection: this log commit.
 
 ## Build
+
+Builder: Claude (host). Pre-build commit `a70ebfa`.
+
+### Database (criteria 1–7)
+
+- **Portal hardening found on the way (portal `823e37f`).** Probing grants before creating
+  the role showed `award`, `unlock`, `buy`, `check_quests` (security definer) and
+  `save_progress` still carried Postgres's default EXECUTE-to-PUBLIC: 0003/0005/0007
+  granted them to `authenticated` but never revoked PUBLIC, so any database login role
+  could set `request.jwt.claims` itself and credit any learner. Migration
+  `0008_reward_rpc_grants.sql` revokes PUBLIC and `anon` (authenticated keeps its grant),
+  with `tests/sql-rpc-grants.test.ts`; applied with `supabase db push`. Live afterwards:
+  `authenticated` still has execute on all five.
+- Role (`docs/db/wordwave-role.sql`, run once as `postgres`): Supabase's `postgres` is not
+  a superuser and cannot `SET ROLE` to a new role, so `create schema ... authorization
+  wordwave_app` was refused; the schema is owned by `postgres` with `usage, create`
+  granted to `wordwave_app`, which owns every table its migrations create. Proof, as
+  `wordwave_app` through both poolers (6543 and 5432): `search_path` = `wordwave`;
+  `public.reward_ledger`, `public.profiles`, `auth.users` denied; `public.award()` and
+  `public.unlock()` "permission denied for function"; `create table public.x` denied;
+  create/drop in `wordwave` allowed. As `postgres`: `anon` and `authenticated` have no
+  usage on `wordwave`. The Data API's exposed schemas are the defaults (no `[api]`
+  override in the portal's `supabase/config.toml`), so `wordwave` is not exposed.
+- Prisma 7: `prisma.config.ts` takes the CLI URL (`MIGRATE_DATABASE_URL`, else
+  `DATABASE_URL`) with `schema=wordwave` added; the runtime adapter takes
+  `{ schema: "wordwave" }` (`@prisma/adapter-pg` option). Prisma 7 no longer reads `.env`,
+  so the config calls `process.loadEnvFile` (explicit variables win, checked).
+  `prisma generate` and `next build` succeed with no database variable (criterion 6).
+- **TLS:** node-postgres treats `sslmode=require` as verify-full, and Supabase's pooler
+  chains to Supabase's own root, so the first production seed failed with "self-signed
+  certificate in certificate chain". Verification is kept, not disabled: the Supabase Root
+  2021 CA (SHA-256 `80:70:25:AD:…:CA:FA`, valid to 2031-04-26; fetched with
+  `openssl s_client -starttls postgres`, chain leaf `*.pooler.supabase.com` → Intermediate
+  2021 → Root 2021) is pinned in `src/lib/supabase-ca.ts`; `connectionConfig` drops the
+  URL's `sslmode` for Supabase hosts and passes `ssl: { ca, rejectUnauthorized: true }`
+  (`tests/db-config.test.ts`). The Prisma CLI (migrate) was unaffected.
+- **Local database (deviation from criterion 7).** `prisma dev` (PGlite underneath) dropped
+  connections ("Connection terminated unexpectedly") under the app's parallel queries and
+  concurrent transactions: one e2e run passed after capping the pool, the next failed the
+  same way on a server that accepted two plain connections. Since the e2e exists partly to
+  prove concurrent-completion safety, `db:dev` now starts a real Postgres 17 (production's
+  major) from the `embedded-postgres` dev dependency (`scripts/db-dev.ts`, port 54329, data
+  in git-ignored `.pgdata/`, initialised `--encoding=UTF8 --no-locale` because Windows
+  otherwise picks WIN1252, which cannot store the course emblems). Its packages are
+  versioned `-beta` upstream (17.10.0-beta.17); CI's `npm ci` downloads the Linux binary
+  although `verify` never opens a database.
+- **Pool:** capped at `POOL_MAX = 5` per client (2 for the e2e script's own client);
+  `pg`'s default of 10 is more than a Vercel instance behind the transaction pooler needs.
+- Migration `20260925210533_init` applied to production through the session pooler as
+  `wordwave_app`.
+
+### Build notes and deviations
+
+- Criterion 23: Next's metadata adds `crossorigin="use-credentials"` to the manifest link
+  only on Vercel preview builds (`next/dist/lib/metadata/metadata.js`), and a
+  `manifest.ts` would also emit its own link. The manifest is therefore a static
+  `public/manifest.webmanifest` with a hand-written credentialed link in the root layout,
+  and `src/app/manifest.ts` is deleted (the work order said it would stay).
+- Criterion 17's e2e step replays a stale Spanish summary with its older `rev`: the e2e
+  cannot send a raw `save_progress` through the server, so it checks the ordering
+  property instead (revisions strictly increase: 2 → 7 → 8; the switch publishes a newer
+  one; the database `summaryRev` equals the published rev; headline follows the switch).
+  The rejection of an older rev is covered by the mock's unit test and by the portal's
+  SQL guard (`0007`, its own tests).
+- Criterion 19: the `kit-failed` screen is not driven by e2e (on localhost the mock kit
+  loads from the bundle, not the network); the screen and its retry are the same shape as
+  Factors' and Word Power's.
+- `/awards` stays as a page of links to the portal's achievements and shop, so the nav is
+  unchanged.
+- `vercel link` wrote `.env.local` with `VERCEL_OIDC_TOKEN` (git-ignored).
+- `applySrsResults` creates new `WordReview` rows with `createMany({ skipDuplicates })`
+  too: a concurrent submission of the same lesson could otherwise abort the transaction
+  on the `(userId, wordId)` key, which the e2e's concurrent step exercises.
+
+### Proofs (local)
+
+- `npm run verify`: prisma generate, typecheck and lint clean; 12 files / 79 tests
+  (proxy, session, next-config byte-identical to Word Power's; host redirect, portal
+  client, completion, pending submission, apiFetch, auth, API-route coverage, result
+  screen, db config); Spanish lock OK; grading checks passed.
+- Byte identity (git blob hashes): `src/proxy.ts`, `src/lib/session.ts`,
+  `src/lib/session-cookie.ts`, `tests/{proxy,session,next-config}.test.ts` = Word Power;
+  `src/lib/kit.ts` = Factors.
+- `npm run e2e` part (a), production build with no database: 26 checks passed (307 to the
+  portal login with `next` on five page routes, four headers, `/api/user` JSON 401,
+  both old hosts 308 to the new host with path and query, icon 200, manifest gated,
+  `/prisma/schema.prisma`, the work order, `/PLAN.md`, `/.env` not served).
+- `npm run e2e` part (b), dev mock on the local Postgres 17: 33 checks passed (twice in a row) (course picker,
+  credentialed manifest link, first lesson with a mistake → awarded 10 XP, one
+  `LessonProgress`, one `WordReview`, HUD 10 XP and 5 gems after returning without a
+  reload and 10 XP after a reload, headline "1 lesson done in Spanish", replay skipped
+  with no XP, direct load and reload of `/lesson/[id]` and `/review/session`, two
+  concurrent completions → one first completion and one award, expected-user mismatch
+  409 with no write, review → one 10 XP award, expired session → portal login with the
+  lesson as `next`, nothing saved, kept submission sent once on return and awarded, no
+  resubmission on reload, summary revisions increase across the Latin switch).

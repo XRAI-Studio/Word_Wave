@@ -6,7 +6,7 @@
  * files are not served.
  *
  * Part (b), development with the mock kit, session and portal (NEXT_PUBLIC_TS_KIT=mock):
- * the full learner flow against the local `prisma dev` database (`npm run db:dev`):
+ * the full learner flow against the local Postgres (`npm run db:dev`):
  * course pick, a lesson with one mistake, the replay, a concurrent double completion,
  * a review session, the HUD across navigation and reload, the launcher summary across a
  * course switch, direct loads of both quiz routes, and the expired-session round trip

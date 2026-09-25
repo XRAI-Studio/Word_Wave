@@ -1,24 +1,37 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { SUPABASE_ROOT_CA } from "./supabase-ca";
 
 /** Every Word Wave table lives in this Postgres schema (work order criterion 3). */
 export const DB_SCHEMA = "wordwave";
 
 /**
- * Connections per client. `pg`'s default of 10 exhausts `prisma dev`'s limit of 10 as soon
- * as a second client (the seed, the e2e script) connects, and each Vercel instance needs
- * few: Supavisor's transaction pooler multiplexes them onto the database.
+ * Connections per client. Each Vercel instance needs few (Supavisor's transaction pooler
+ * multiplexes them onto the database), well under `pg`'s default of 10.
  */
 export const POOL_MAX = 5;
 
 /**
  * A Prisma client on node-postgres. Production passes the Supavisor transaction pooler
- * URL as `wordwave_app`; local development and e2e pass the `prisma dev` URL. Shared by
+ * URL as `wordwave_app`; local development and e2e pass the `npm run db:dev` URL. Shared by
  * the app, `prisma/seed.ts`, `scripts/audit-courses.ts` and `scripts/e2e.ts`.
  */
 export function createDbClient(url: string | undefined = process.env.DATABASE_URL, max = POOL_MAX): PrismaClient {
   if (!url) throw new Error("DATABASE_URL is not set");
-  return new PrismaClient({ adapter: new PrismaPg({ connectionString: url, max }, { schema: DB_SCHEMA }) });
+  return new PrismaClient({ adapter: new PrismaPg({ ...connectionConfig(url), max }, { schema: DB_SCHEMA }) });
+}
+
+/**
+ * Supabase hosts get TLS verified against Supabase's own root CA (see supabase-ca.ts).
+ * The URL's `sslmode` is dropped for them because node-postgres lets the connection
+ * string's SSL settings override the `ssl` object. Other hosts (the local database) are
+ * passed through untouched.
+ */
+export function connectionConfig(url: string): { connectionString: string; ssl?: { ca: string; rejectUnauthorized: true } } {
+  const u = new URL(url);
+  if (!/\.supabase\.(com|co)$/.test(u.hostname)) return { connectionString: url };
+  u.searchParams.delete("sslmode");
+  return { connectionString: u.toString(), ssl: { ca: SUPABASE_ROOT_CA, rejectUnauthorized: true } };
 }
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
