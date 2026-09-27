@@ -172,6 +172,7 @@ export function Quiz({
         reloadForAccountChange();
         return;
       }
+      setSigningIn(false);
       toast.error("Couldn't save your progress. Check your connection and try again.");
       setStatus("correct"); // let the user hit Continue and retry
     }
