@@ -138,7 +138,17 @@ export function useGuardedLeave() {
 
   const dialog = prompt
     ? createPortal(
-        <LeaveDialog kind={prompt.kind} onStay={stay} onLeave={() => leaveGuard.leave(prompt.url)} />,
+        <LeaveDialog
+          kind={prompt.kind}
+          onStay={stay}
+          onLeave={() => {
+            // Closed at once: there is no staying once the learner chose to leave (Codex
+            // WW-HR-004). A stopped navigation gives the page back with the guard re-armed.
+            setPrompt(null);
+            openerRef.current = null;
+            leaveGuard.leave(prompt.url);
+          }}
+        />,
         document.body
       )
     : null;

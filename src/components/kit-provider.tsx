@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
+import { HomeRoomButton } from "@/components/home-room";
 import { reloadForAccountChange, takeAccountChangedNotice } from "@/lib/account-change";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 import { loadDevKit, loadRealKit, shouldUseMockKit, type Kit } from "@/lib/kit";
@@ -107,31 +108,55 @@ export function KitProvider({ children }: { children: React.ReactNode }) {
     return <KitContext.Provider value={boot.kit}>{children}</KitContext.Provider>;
   }
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
-      {boot.status === "loading" && (
-        <p className="font-display font-bold text-ink-soft" aria-live="polite" data-testid="kit-loading">
-          Loading…
-        </p>
-      )}
-      {boot.status === "redirecting" && (
-        <p className="font-display font-bold text-ink-soft" aria-live="polite" data-testid="redirecting">
-          Sending you to sign in…
-        </p>
-      )}
-      {boot.status === "kit-failed" && (
-        <div data-testid="kit-failed" className="flex flex-col items-center gap-4">
-          <p className="font-display text-xl font-extrabold">Couldn&apos;t reach the school</p>
-          <p className="text-ink-soft">Check your connection, then try again.</p>
-          <ChunkyButton
-            onClick={() => {
-              setBoot({ status: "loading" });
-              setAttempt((n) => n + 1);
-            }}
-          >
-            Try again
-          </ChunkyButton>
+    <KitBootScreen
+      status={boot.status}
+      onRetry={() => {
+        setBoot({ status: "loading" });
+        setAttempt((n) => n + 1);
+      }}
+    />
+  );
+}
+
+/**
+ * What every page shows until the kit is ready. Loading and failure keep the Home Room
+ * control (Codex WW-HR-005): the page's own buttons render only once the kit is ready, so
+ * without it a slow or failed start would leave no way back to the portal. The redirect
+ * screen has none: the browser is already on its way to sign in.
+ */
+export function KitBootScreen({
+  status,
+  onRetry,
+}: {
+  status: "loading" | "redirecting" | "kit-failed";
+  onRetry: () => void;
+}) {
+  return (
+    <div className="flex min-h-dvh flex-col">
+      {status !== "redirecting" && (
+        <div className="mx-auto flex w-full max-w-3xl justify-end px-4 pt-3">
+          <HomeRoomButton />
         </div>
       )}
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center">
+        {status === "loading" && (
+          <p className="font-display font-bold text-ink-soft" aria-live="polite" data-testid="kit-loading">
+            Loading…
+          </p>
+        )}
+        {status === "redirecting" && (
+          <p className="font-display font-bold text-ink-soft" aria-live="polite" data-testid="redirecting">
+            Sending you to sign in…
+          </p>
+        )}
+        {status === "kit-failed" && (
+          <div data-testid="kit-failed" className="flex flex-col items-center gap-4">
+            <p className="font-display text-xl font-extrabold">Couldn&apos;t reach the school</p>
+            <p className="text-ink-soft">Check your connection, then try again.</p>
+            <ChunkyButton onClick={onRetry}>Try again</ChunkyButton>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

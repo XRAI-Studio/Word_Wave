@@ -7,8 +7,8 @@ export type CourseSelectResult = "switched" | "failed" | "leaving";
  * Sets the learner's active course, then enters the path (the course switcher and
  * /welcome). The write is tracked by the leave guard, so "Return to Home Room" waits for
  * it (under the same 2 s deadline); once a departure has begun, no course change starts
- * and a finished one does not send the learner to /learn over the Home Room navigation
- * (Codex WW-HR-002).
+ * and one already under way never sends the learner to /learn over the Home Room
+ * navigation, however late it finishes (Codex WW-HR-002, WW-HR-003).
  */
 export async function selectCourse(
   code: string,
@@ -20,6 +20,9 @@ export async function selectCourse(
 ): Promise<CourseSelectResult> {
   const guard = o.guard ?? leaveGuard;
   if (guard.isDeparting()) return "leaving";
+  // A departure started at any point after this, even one that has since stalled and been
+  // reset, cancels the navigation to /learn for good (Codex WW-HR-003).
+  const generation = guard.departureCount();
   const post =
     o.post ??
     ((c: string) =>
@@ -34,7 +37,7 @@ export async function selectCourse(
   } catch {
     return "failed";
   }
-  if (guard.isDeparting()) return "leaving";
+  if (guard.isDeparting() || guard.departureCount() !== generation) return "leaving";
   if (!res.ok) return "failed";
   (o.navigate ?? ((url: string) => window.location.assign(url)))("/learn");
   return "switched";

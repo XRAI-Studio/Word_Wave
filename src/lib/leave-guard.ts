@@ -72,6 +72,12 @@ export interface LeaveGuard {
   depart(url: string, deadlineMs?: number): Promise<UnsavedKind | null>;
   /** True from a leave button's press until the page is gone, stalls or asks. */
   isDeparting(): boolean;
+  /**
+   * How many departures this document has started. It only grows (a stalled departure's
+   * reset does not undo it), so work begun before a departure can tell, however late it
+   * finishes, that one started meanwhile.
+   */
+  departureCount(): number;
   /** Notified whenever `isDeparting` changes; returns the unsubscribe. */
   subscribe(listener: () => void): () => void;
 }
@@ -88,6 +94,7 @@ export function createLeaveGuard(o: {
   // earlier one changes nothing.
   let departing = false;
   let attempt = 0;
+  let started = 0;
   const listeners = new Set<() => void>();
 
   const onBeforeUnload = (e: Event) => {
@@ -122,6 +129,7 @@ export function createLeaveGuard(o: {
   }
 
   function beginDeparture(): number {
+    started += 1;
     attempt += 1;
     setDeparting(true);
     return attempt;
@@ -212,6 +220,7 @@ export function createLeaveGuard(o: {
       return null;
     },
     isDeparting: () => departing,
+    departureCount: () => started,
     subscribe(listener) {
       listeners.add(listener);
       return () => {

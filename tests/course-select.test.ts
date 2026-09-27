@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { selectCourse } from "@/lib/course-select";
-import { createLeaveGuard, HOME, LEAVE_DEADLINE_MS } from "@/lib/leave-guard";
+import { createLeaveGuard, HOME, LEAVE_DEADLINE_MS, STALLED_DEPARTURE_MS } from "@/lib/leave-guard";
 
 function setup(delayMs: number, status = 200) {
   const home = vi.fn();
@@ -55,6 +55,29 @@ describe("course selection and Return to Home Room (Codex WW-HR-002)", () => {
     await vi.advanceTimersByTimeAsync(2000);
     await expect(result).resolves.toBe("leaving");
     expect(toLearn).not.toHaveBeenCalled();
+  });
+
+  it("a 6 s request never navigates, even after a stalled departure was reset (WW-HR-003)", async () => {
+    const { guard, home, toLearn, pick } = setup(6000);
+    const result = pick();
+    void guard.depart(HOME);
+    await vi.advanceTimersByTimeAsync(LEAVE_DEADLINE_MS);
+    expect(home).toHaveBeenCalledWith(HOME); // Home Room leaves at 2 s
+    await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS); // t=5 s: the departure is reset
+    expect(guard.isDeparting()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000); // t=6 s: the course write finishes
+    await expect(result).resolves.toBe("leaving");
+    expect(toLearn).not.toHaveBeenCalled();
+  });
+
+  it("a selection started after a departure was reset proceeds normally", async () => {
+    const { guard, toLearn, pick } = setup(100);
+    guard.leave(HOME);
+    await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS);
+    const result = pick();
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(result).resolves.toBe("switched");
+    expect(toLearn).toHaveBeenCalledWith("/learn");
   });
 
   it("no course change starts once a departure has begun", async () => {

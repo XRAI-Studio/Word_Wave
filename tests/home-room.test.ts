@@ -69,3 +69,29 @@ describe("expired session while saving (HR-004)", () => {
     expect(SIGN_IN_AGAIN).toBe("Signing you in again… If nothing happens, press Check again.");
   });
 });
+
+describe("the kit's start screens keep Home Room (Codex WW-HR-005)", () => {
+  const count = (html: string) => html.split("Return to Home Room").length - 1;
+
+  it("while loading and after a failed start, exactly one button", async () => {
+    const { KitBootScreen } = await import("@/components/kit-provider");
+    for (const status of ["loading", "kit-failed"] as const) {
+      const html = renderToStaticMarkup(createElement(KitBootScreen, { status, onRetry: noop }));
+      expect(count(html), status).toBe(1);
+    }
+  });
+
+  it("none on the redirect screen: the browser is already going to sign in", async () => {
+    const { KitBootScreen } = await import("@/components/kit-provider");
+    const html = renderToStaticMarkup(createElement(KitBootScreen, { status: "redirecting", onRetry: noop }));
+    expect(count(html)).toBe(0);
+  });
+
+  it("the provider's first paint (still loading) has it, and not the page's own", async () => {
+    const { KitProvider } = await import("@/components/kit-provider");
+    const html = renderToStaticMarkup(createElement(KitProvider, null, createElement("p", null, "page")));
+    expect(count(html)).toBe(1);
+    expect(html).toContain('data-testid="kit-loading"');
+    expect(html).not.toContain("<p>page</p>");
+  });
+});

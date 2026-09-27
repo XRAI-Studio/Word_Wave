@@ -826,6 +826,44 @@ async function learnerFlowInDevMode() {
     );
     check(page.url() === HOME, "Home Room then Leave without saving goes to the portal");
 
+    // A departure that never happens (Codex WW-HR-001, WW-HR-004): the portal answers 204
+    // No Content, which the browser treats as a cancelled navigation, so the document
+    // stays (like pressing Stop). Leave without saving closes the dialog at once, the page
+    // holds still during the departure, and 3 s later the quiz, the button and the leave
+    // prompt are all back.
+    await page.route(HOME, (route) => route.fulfill({ status: 204 }));
+    await page.goto(`${base}/lesson/${guard.id}`);
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await solveChallenge(page, guardData.challenges[0], false);
+    const beforeStop = await progressNow();
+    await homeRoom().click();
+    await dialog.waitFor({ timeout: 10_000 });
+    const leftAt = Date.now();
+    await dialog
+      .getByRole("button", { name: "Leave without saving" })
+      .evaluate((el) => (el as HTMLButtonElement).click());
+    await page.waitForTimeout(500);
+    check((await page.getByRole("dialog").count()) === 0, "Leave without saving closes the dialog at once (no Stay during the departure)");
+    const busyDuring = await homeRoom().getAttribute("aria-disabled");
+    const quizHeld = await page.locator("fieldset").evaluate((f) => (f as HTMLFieldSetElement).disabled);
+    check(Date.now() - leftAt < 2_500 && busyDuring === "true" && quizHeld, "during the departure the button is busy and the quiz holds still");
+    await page.waitForTimeout(3_500);
+    check(
+      page.url().endsWith(`/lesson/${guard.id}`) && (await progressNow()) === beforeStop,
+      "a departure that did not happen leaves the quiz as it was"
+    );
+    check((await homeRoom().getAttribute("aria-disabled")) === null, "and Return to Home Room is usable again");
+    check(!(await page.locator("fieldset").evaluate((f) => (f as HTMLFieldSetElement).disabled)), "and the quiz answers again");
+    const reArmed = await answerLeavePrompt(page, "dismiss", () => historyStep(page, "back"));
+    check(reArmed === "beforeunload", `and the answers are protected by the leave prompt again (got ${reArmed})`);
+    await page.unroute(HOME);
+    await answerLeavePrompt(page, "accept", () =>
+      page.evaluate(() => {
+        setTimeout(() => location.assign("/learn"), 0);
+      })
+    );
+    await page.waitForURL("**/learn", { timeout: 20_000 });
+
     // A finished lesson: Home Room on the result screen goes straight home.
     await page.goto(`${base}/lesson/${guard.id}`);
     await guardFirst().waitFor({ timeout: 60_000 });
@@ -913,6 +951,21 @@ async function learnerFlowInDevMode() {
     await stillHome("/welcome course pick");
     check((await activeCourse()) === "es", "and the course pick was saved before leaving");
     await page.unroute("**/api/course/active");
+
+    // The kit's start screens keep Home Room (Codex WW-HR-005): a slow start, then ready
+    // with no second button; a failed start, from which Home Room still goes home.
+    await page.route("**/api/user", delayed(3000), { times: 1 });
+    await page.goto(base + "/learn");
+    await page.getByTestId("kit-loading").waitFor({ timeout: 60_000 });
+    check((await homeRoom().count()) === 1, "a slow kit start shows Return to Home Room");
+    await hudXp(page);
+    check((await homeRoom().count()) === 1, "and once ready there is still exactly one");
+    await page.route("**/api/user", (route) => route.abort(), { times: 1 });
+    await page.goto(base + "/learn");
+    await page.getByTestId("kit-failed").waitFor({ timeout: 60_000 });
+    check((await homeRoom().count()) === 1, "a failed kit start shows Return to Home Room");
+    await noPrompt("Home Room on the kit-failed screen", () => homeRoom().click(), () => page.waitForURL(HOME, { timeout: 20_000 }));
+    check(page.url() === HOME, "and it goes to the portal");
 
     await context.close();
   } finally {
