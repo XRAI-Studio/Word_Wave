@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { HomeRoomButton } from "@/components/home-room";
+import { HomeRoomButton, useDeparting } from "@/components/home-room";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
+import { selectCourse } from "@/lib/course-select";
+import { leaveGuard } from "@/lib/leave-guard";
 
 interface CourseOption {
   code: string;
@@ -15,35 +17,29 @@ interface CourseOption {
 export default function WelcomePage() {
   const [courses, setCourses] = useState<CourseOption[] | null>(null);
   const [choosing, setChoosing] = useState<string | null>(null);
+  const departing = useDeparting();
 
   useEffect(() => {
     apiFetch("/api/courses")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d: { activeCourseCode: string | null; courses: CourseOption[] }) => {
         // Already picked (e.g. back button) — go straight in.
-        if (d.activeCourseCode) window.location.assign("/learn");
+        if (d.activeCourseCode) {
+          if (!leaveGuard.isDeparting()) window.location.assign("/learn");
+        }
         else setCourses(d.courses);
       })
       // A signed-out learner is already on the way to the portal (apiFetch); any other
       // failure reloads, and the page gate decides again.
       .catch((e) => {
-        if (!(e instanceof RedirectingError)) window.location.reload();
+        if (!(e instanceof RedirectingError) && !leaveGuard.isDeparting()) window.location.reload();
       });
   }, []);
 
   async function choose(code: string) {
     setChoosing(code);
-    try {
-      const res = await apiFetch("/api/course/active", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseCode: code }),
-      });
-      if (res.ok) window.location.assign("/learn");
-      else setChoosing(null);
-    } catch {
-      setChoosing(null);
-    }
+    // Tracked by the leave guard; no /learn navigation once Home Room is leaving.
+    if ((await selectCourse(code)) !== "switched") setChoosing(null);
   }
 
   return (
@@ -61,7 +57,7 @@ export default function WelcomePage() {
               key={c.code}
               type="button"
               onClick={() => choose(c.code)}
-              disabled={choosing !== null}
+              disabled={choosing !== null || departing}
               className="flex w-full items-center gap-4 rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-4 text-left font-display font-bold transition-colors hover:border-brand disabled:opacity-60"
             >
               <span className="text-3xl leading-none" aria-hidden>

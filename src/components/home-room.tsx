@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { House } from "lucide-react";
 import { ChunkyButton } from "@/components/chunky-button";
@@ -91,6 +91,12 @@ export function LeaveDialog({
   );
 }
 
+/** True while a departure is under way (from a leave button's press until the page has
+ *  gone, stalled or asked): controls that would change or navigate the page hold still. */
+export function useDeparting(): boolean {
+  return useSyncExternalStore(leaveGuard.subscribe, leaveGuard.isDeparting, () => false);
+}
+
 /**
  * A departure through the page's leave guard: waits (at most 2 s) for saves under way,
  * then leaves with a full navigation, or, if answers are still unsaved, asks first.
@@ -99,35 +105,28 @@ export function LeaveDialog({
  */
 export function useGuardedLeave() {
   const [prompt, setPrompt] = useState<{ url: string; kind: UnsavedKind } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
+  // The guard owns the departure: busy from the press until the page goes, or until a
+  // stopped navigation or a back/forward cache restore gives the page back.
+  const busy = useDeparting();
   // Where focus goes back to when the learner stays.
   const openerRef = useRef<HTMLElement | null>(null);
 
   // A page restored from the back/forward cache starts over.
   useEffect(() => {
     function onShow(e: PageTransitionEvent) {
-      if (!e.persisted) return;
-      busyRef.current = false;
-      setBusy(false);
-      setPrompt(null);
+      if (e.persisted) setPrompt(null);
     }
     window.addEventListener("pageshow", onShow);
     return () => window.removeEventListener("pageshow", onShow);
   }, []);
 
   const request = useCallback(async (url: string, opener: HTMLElement | null) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
+    // A press during a departure is ignored by the guard (resolves null).
     const kind = await leaveGuard.depart(url);
     if (kind) {
-      busyRef.current = false;
-      setBusy(false);
       openerRef.current = opener;
       setPrompt({ url, kind });
     }
-    // Otherwise the page is leaving; the button stays busy until it has gone.
   }, []);
 
   const stay = useCallback(() => {

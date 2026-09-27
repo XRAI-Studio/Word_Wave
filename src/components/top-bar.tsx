@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Flame, Gem, Zap } from "lucide-react";
-import { HomeRoomButton } from "@/components/home-room";
+import { HomeRoomButton, useDeparting } from "@/components/home-room";
 import { useGameStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { apiFetch } from "@/lib/api-fetch";
+import { selectCourse } from "@/lib/course-select";
 
 export interface CourseStats {
   levels: number;
@@ -32,6 +32,7 @@ function CourseSwitcher({
 }) {
   const [open, setOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const departing = useDeparting();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,17 +49,8 @@ function CourseSwitcher({
       return;
     }
     setSwitching(true);
-    try {
-      const res = await apiFetch("/api/course/active", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ courseCode: code }),
-      });
-      if (res.ok) window.location.assign("/learn");
-      else setSwitching(false);
-    } catch {
-      setSwitching(false);
-    }
+    // Tracked by the leave guard; no /learn navigation once Home Room is leaving.
+    if ((await selectCourse(code)) !== "switched") setSwitching(false);
   }
 
   return (
@@ -66,7 +58,7 @@ function CourseSwitcher({
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        disabled={switching}
+        disabled={switching || departing}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={`Current course: ${activeCourse.name}. Switch course`}
@@ -93,6 +85,7 @@ function CourseSwitcher({
               type="button"
               role="menuitemradio"
               aria-checked={c.code === activeCourse.code}
+              disabled={switching || departing}
               onClick={() => pick(c.code)}
               className="flex w-full items-center gap-2 px-3 py-2 text-left font-display font-bold hover:bg-line/50"
             >

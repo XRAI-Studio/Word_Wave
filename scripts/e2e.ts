@@ -886,6 +886,34 @@ async function learnerFlowInDevMode() {
     check(leftBehind !== null && leftBehind.includes(longWait.id), "the kept submission stays for the next visit");
     await page.evaluate(() => sessionStorage.removeItem("wordwave:pending-submission"));
 
+    // A delayed course change, then Home Room (Codex WW-HR-002): Home Room waits for the
+    // write and the course change never sends the learner to /learn afterwards.
+    const activeCourse = async () =>
+      (await db.user.findUniqueOrThrow({ where: { id: MOCK_USER } })).activeCourseId;
+    const stillHome = async (label: string) => {
+      await page.waitForURL(HOME, { timeout: 20_000 });
+      await page.waitForTimeout(2500); // longer than the write's remaining delay
+      check(page.url() === HOME, `${label}: Home Room wins, no /learn afterwards (at ${page.url()})`);
+    };
+    await page.route("**/api/course/active", delayed(1200));
+
+    await page.goto(base + "/learn");
+    await hudXp(page);
+    await page.getByRole("button", { name: /Switch course/ }).click();
+    await page.getByRole("menuitemradio", { name: /Latin/ }).click();
+    await homeRoom().click();
+    await stillHome("top bar course switch");
+    check((await activeCourse()) === "la", "and the course change was saved before leaving");
+
+    await db.user.update({ where: { id: MOCK_USER }, data: { activeCourseId: null } });
+    await page.goto(base + "/welcome");
+    await page.getByRole("button", { name: /Spanish/ }).waitFor({ timeout: 60_000 });
+    await page.getByRole("button", { name: /Spanish/ }).click();
+    await homeRoom().click();
+    await stillHome("/welcome course pick");
+    check((await activeCourse()) === "es", "and the course pick was saved before leaving");
+    await page.unroute("**/api/course/active");
+
     await context.close();
   } finally {
     await browser.close();

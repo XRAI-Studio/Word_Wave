@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createLeaveGuard, HOME, LEAVE_DEADLINE_MS } from "@/lib/leave-guard";
+import { createLeaveGuard, HOME, LEAVE_DEADLINE_MS, STALLED_DEPARTURE_MS } from "@/lib/leave-guard";
 
 /** A stand-in for `window`: records listeners and dispatches to them. */
 function fakeWindow() {
@@ -282,6 +282,79 @@ describe("leave guard (home-room plan, Word Wave)", () => {
       expect(win.beforeUnload()).toBe(true);
       await expect(guard.depart(HOME)).resolves.toBe("lesson");
       expect(navigate).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("a departure is limited to its own attempt (Codex WW-HR-001)", () => {
+    it("is under way from the press until the page goes, and blocks a second press", async () => {
+      const { navigate, guard } = setup();
+      const seen: boolean[] = [];
+      guard.subscribe(() => seen.push(guard.isDeparting()));
+      guard.track(new Promise<void>((r) => setTimeout(r, 500)));
+      const first = guard.depart(HOME);
+      expect(guard.isDeparting()).toBe(true); // at once, before the wait
+      await expect(guard.depart(HOME)).resolves.toBeNull(); // ignored
+      await vi.advanceTimersByTimeAsync(500);
+      await first;
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(seen).toEqual([true]);
+    });
+
+    it("a stopped navigation gives the page back: prompt, answers, another departure", async () => {
+      const { win, navigate, guard, set } = setup();
+      const seen: boolean[] = [];
+      guard.subscribe(() => seen.push(guard.isDeparting()));
+
+      await guard.depart(HOME); // nothing unsaved: leaves
+      expect(navigate).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS - 1);
+      expect(guard.isDeparting()).toBe(true);
+      set(true); // an answer while the page is (not yet) going: allowed, so not armed
+      expect(win.count("beforeunload")).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(1); // the browser's Stop: still here after 3 s
+      expect(guard.isDeparting()).toBe(false);
+      expect(seen).toEqual([true, false]);
+      expect(win.beforeUnload()).toBe(true); // the answer is protected again
+
+      await expect(guard.depart(HOME)).resolves.toBe("lesson"); // the dialog this time
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(guard.isDeparting()).toBe(false);
+    });
+
+    it("Leave without saving that is stopped re-arms the prompt for the answers", async () => {
+      const { win, guard, set } = setup();
+      set(true);
+      guard.leave(HOME);
+      expect(guard.isDeparting()).toBe(true);
+      expect(win.beforeUnload()).toBe(false);
+      await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS);
+      expect(guard.isDeparting()).toBe(false);
+      expect(win.beforeUnload()).toBe(true);
+    });
+
+    it("ignores a late timer from an earlier departure", async () => {
+      const { win, navigate, guard, set } = setup();
+      set(true);
+      guard.leave(HOME); // attempt 1 at t=0
+      await vi.advanceTimersByTimeAsync(1000);
+      win.pageshow(true); // back from the cache: attempt 1 is over
+      expect(guard.isDeparting()).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      guard.leave("/learn"); // attempt 2 at t=2 s
+      await vi.advanceTimersByTimeAsync(1000); // t=3 s: attempt 1's timer fires
+      expect(guard.isDeparting()).toBe(true);
+      expect(win.beforeUnload()).toBe(false);
+      await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS - 1000); // t=5 s
+      expect(guard.isDeparting()).toBe(false);
+      expect(navigate).toHaveBeenCalledTimes(2);
+    });
+
+    it("a press that finds unsaved answers ends its departure at once", async () => {
+      const { guard, set } = setup();
+      set(true);
+      await expect(guard.depart(HOME)).resolves.toBe("lesson");
+      expect(guard.isDeparting()).toBe(false);
     });
   });
 

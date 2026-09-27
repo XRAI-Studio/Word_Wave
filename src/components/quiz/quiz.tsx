@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 import { ChunkyButton } from "@/components/chunky-button";
-import { useGuardedLeave } from "@/components/home-room";
+import { useDeparting, useGuardedLeave } from "@/components/home-room";
 import { FillBlank } from "@/components/quiz/fill-blank";
 import { MatchPairs } from "@/components/quiz/match-pairs";
 import { MultipleChoice } from "@/components/quiz/multiple-choice";
@@ -48,6 +48,7 @@ export function Quiz({
 }) {
   const kit = useKit();
   const leave = useGuardedLeave();
+  const departing = useDeparting();
   const applyAward = useGameStore((st) => st.applyAward);
 
   const [queue, setQueue] = useState(challenges);
@@ -262,94 +263,97 @@ export function Quiz({
         </div>
       </div>
 
-      {/* challenge */}
-      <div className="mx-auto w-full max-w-2xl flex-1 px-4 pb-40 pt-6">
-        <h1 className="font-display text-2xl font-extrabold">{current.prompt}</h1>
-        <div className="mt-8">
-          {current.type === "MULTIPLE_CHOICE" && (
-            <MultipleChoice
-              meta={current.meta}
-              value={mcValue}
-              onChange={setMcValue}
-              disabled={status !== "answering"}
-            />
-          )}
-          {current.type === "TRANSLATE" && (
-            <Translate
-              meta={current.meta}
-              value={trValue}
-              onChange={setTrValue}
-              disabled={status !== "answering"}
-            />
-          )}
-          {current.type === "FILL_BLANK" && (
-            <FillBlank
-              key={`${current.id}-${idx}`}
-              value={fbValue}
-              onChange={setFbValue}
-              onSubmit={() => {
-                if (status === "answering" && fbValue.trim().length > 0) check();
-              }}
-              disabled={status !== "answering"}
-            />
-          )}
-          {current.type === "MATCH" && (
-            <MatchPairs
-              key={`${current.id}-${idx}`}
-              meta={current.meta}
-              onMiss={(ids) => recordWords(ids, false)}
-              onComplete={handleCorrect}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* footer */}
-      <div
-        className={cn(
-          "fixed inset-x-0 bottom-0 border-t-2",
-          status === "correct" || status === "submitting"
-            ? "border-verde bg-verde-soft"
-            : status === "wrong"
-              ? "border-heart bg-heart-soft"
-              : "border-line bg-white"
-        )}
-      >
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 py-4">
-          <div aria-live="polite" className="font-display font-bold">
-            {signingIn && (status === "correct" || status === "submitting") ? (
-              <span className="text-ink" data-testid="sign-in-again">
-                {SIGN_IN_AGAIN}
-              </span>
-            ) : (
-              (status === "correct" || status === "submitting") && (
-                <span className="text-verde-deep">{labels.correct}</span>
-              )
+      {/* While Home Room or the X is leaving, the quiz holds still (Codex WW-HR-001). */}
+      <fieldset disabled={departing} className="m-0 flex min-w-0 flex-1 flex-col border-0 p-0">
+        {/* challenge */}
+        <div className="mx-auto w-full max-w-2xl flex-1 px-4 pb-40 pt-6">
+          <h1 className="font-display text-2xl font-extrabold">{current.prompt}</h1>
+          <div className="mt-8">
+            {current.type === "MULTIPLE_CHOICE" && (
+              <MultipleChoice
+                meta={current.meta}
+                value={mcValue}
+                onChange={setMcValue}
+                disabled={status !== "answering"}
+              />
             )}
-            {status === "wrong" && (
-              <span className="text-heart-deep">
-                Correct answer: <span className="font-sans font-semibold">{current.correctAnswer}</span>
-              </span>
+            {current.type === "TRANSLATE" && (
+              <Translate
+                meta={current.meta}
+                value={trValue}
+                onChange={setTrValue}
+                disabled={status !== "answering"}
+              />
+            )}
+            {current.type === "FILL_BLANK" && (
+              <FillBlank
+                key={`${current.id}-${idx}`}
+                value={fbValue}
+                onChange={setFbValue}
+                onSubmit={() => {
+                  if (status === "answering" && fbValue.trim().length > 0) check();
+                }}
+                disabled={status !== "answering"}
+              />
+            )}
+            {current.type === "MATCH" && (
+              <MatchPairs
+                key={`${current.id}-${idx}`}
+                meta={current.meta}
+                onMiss={(ids) => recordWords(ids, false)}
+                onComplete={handleCorrect}
+              />
             )}
           </div>
-          {current.type === "MATCH" && status === "answering" ? (
-            <span className="text-ink-soft text-sm">Match all the pairs to continue</span>
-          ) : status === "answering" ? (
-            <ChunkyButton onClick={check} disabled={!canCheck} className="min-w-36">
-              Check
-            </ChunkyButton>
-          ) : (
-            <ChunkyButton
-              variant={status === "wrong" ? "danger" : "success"}
-              onClick={advance}
-              disabled={status === "submitting"}
-              className="min-w-36"
-            >
-              {status === "submitting" ? "Saving…" : signingIn ? "Check" : "Continue"}
-            </ChunkyButton>
-          )}
         </div>
-      </div>
+
+        {/* footer */}
+        <div
+          className={cn(
+            "fixed inset-x-0 bottom-0 border-t-2",
+            status === "correct" || status === "submitting"
+              ? "border-verde bg-verde-soft"
+              : status === "wrong"
+                ? "border-heart bg-heart-soft"
+                : "border-line bg-white"
+          )}
+        >
+          <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 py-4">
+            <div aria-live="polite" className="font-display font-bold">
+              {signingIn && (status === "correct" || status === "submitting") ? (
+                <span className="text-ink" data-testid="sign-in-again">
+                  {SIGN_IN_AGAIN}
+                </span>
+              ) : (
+                (status === "correct" || status === "submitting") && (
+                  <span className="text-verde-deep">{labels.correct}</span>
+                )
+              )}
+              {status === "wrong" && (
+                <span className="text-heart-deep">
+                  Correct answer: <span className="font-sans font-semibold">{current.correctAnswer}</span>
+                </span>
+              )}
+            </div>
+            {current.type === "MATCH" && status === "answering" ? (
+              <span className="text-ink-soft text-sm">Match all the pairs to continue</span>
+            ) : status === "answering" ? (
+              <ChunkyButton onClick={check} disabled={!canCheck} className="min-w-36">
+                Check
+              </ChunkyButton>
+            ) : (
+              <ChunkyButton
+                variant={status === "wrong" ? "danger" : "success"}
+                onClick={advance}
+                disabled={status === "submitting"}
+                className="min-w-36"
+              >
+                {status === "submitting" ? "Saving…" : signingIn ? "Check" : "Continue"}
+              </ChunkyButton>
+            )}
+          </div>
+        </div>
+      </fieldset>
     </div>
   );
 }

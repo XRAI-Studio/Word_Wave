@@ -19,6 +19,10 @@ export const HOME = "https://class.travelschooling.com/";
 /** How long a clean departure waits for tracked saves (plan A3: at most 2 s). */
 export const LEAVE_DEADLINE_MS = 2000;
 
+/** A departure whose document is still here this long after `location.assign` was
+ *  stopped (the browser's Stop, a failed load): the page goes back to normal. */
+export const STALLED_DEPARTURE_MS = 3000;
+
 export type UnsavedKind = "lesson" | "review";
 
 export interface UnsavedSource {
@@ -51,14 +55,25 @@ export interface LeaveGuard {
   allowUnload(): void;
   /** Undoes `allowUnload` (a departure that did not happen) and re-reads the predicate. */
   resume(): void;
-  /** Disarms, then navigates (a full document navigation). */
+  /**
+   * Disarms, then navigates (a full document navigation). The departure lasts until the
+   * document goes; if it is still here `STALLED_DEPARTURE_MS` later, the guard, the prompt
+   * and every "leaving" state go back to normal (a late timer from an older departure is
+   * ignored).
+   */
   leave(url: string): void;
   /**
-   * The in-app leave buttons (Return to Home Room, the quiz's X): waits for tracked saves
-   * under one deadline, then re-reads the predicate. Nothing unsaved: leaves for `url` and
-   * resolves null. Otherwise stays and resolves what is unsaved, for the dialog.
+   * The in-app leave buttons (Return to Home Room, the quiz's X): starts a departure at
+   * once (so course changes and duplicate presses see it), waits for tracked saves under
+   * one deadline, then re-reads the predicate. Nothing unsaved: leaves for `url` and
+   * resolves null. Otherwise ends the departure and resolves what is unsaved, for the
+   * dialog. A press while a departure is under way is ignored (resolves null).
    */
   depart(url: string, deadlineMs?: number): Promise<UnsavedKind | null>;
+  /** True from a leave button's press until the page is gone, stalls or asks. */
+  isDeparting(): boolean;
+  /** Notified whenever `isDeparting` changes; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void;
 }
 
 export function createLeaveGuard(o: {
@@ -69,6 +84,11 @@ export function createLeaveGuard(o: {
   let armed = false;
   let allowed = false;
   const pending = new Set<Promise<unknown>>();
+  // The departure under way, if any; each one has its own number so a late timer from an
+  // earlier one changes nothing.
+  let departing = false;
+  let attempt = 0;
+  const listeners = new Set<() => void>();
 
   const onBeforeUnload = (e: Event) => {
     e.preventDefault();
@@ -95,15 +115,40 @@ export function createLeaveGuard(o: {
     refresh();
   }
 
+  function setDeparting(v: boolean) {
+    if (departing === v) return;
+    departing = v;
+    for (const l of [...listeners]) l();
+  }
+
+  function beginDeparture(): number {
+    attempt += 1;
+    setDeparting(true);
+    return attempt;
+  }
+
+  /** Ends departure `a` if it is still the current one: the page is staying. */
+  function endDeparture(a: number) {
+    if (a !== attempt) return;
+    attempt += 1;
+    allowed = false;
+    setDeparting(false);
+    refresh();
+  }
+
   // A page restored from the back/forward cache is live again: whatever let it go before
   // no longer applies.
   o.target?.addEventListener("pageshow", (e) => {
-    if ((e as PageTransitionEvent).persisted) resume();
+    if (!(e as PageTransitionEvent).persisted) return;
+    if (departing) endDeparture(attempt);
+    else resume();
   });
 
   function leave(url: string) {
+    const a = departing ? attempt : beginDeparture();
     allowUnload();
     o.navigate(url);
+    setTimeout(() => endDeparture(a), STALLED_DEPARTURE_MS);
   }
 
   async function settle(deadlineMs = LEAVE_DEADLINE_MS) {
@@ -154,11 +199,24 @@ export function createLeaveGuard(o: {
     resume,
     leave,
     async depart(url, deadlineMs) {
+      if (departing) return null;
+      const a = beginDeparture();
       await settle(deadlineMs);
+      if (a !== attempt) return null; // reset meanwhile (a back/forward cache restore)
       const kind = unsavedKind();
-      if (kind) return kind;
+      if (kind) {
+        endDeparture(a);
+        return kind;
+      }
       leave(url);
       return null;
+    },
+    isDeparting: () => departing,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
