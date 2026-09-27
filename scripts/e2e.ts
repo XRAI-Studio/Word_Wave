@@ -17,6 +17,7 @@
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { rmSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { chromium, type Dialog, type Page, type Route } from "playwright";
@@ -337,6 +338,13 @@ async function learnerFlowInDevMode() {
   }
   const db = createDbClient(process.env.DATABASE_URL, 2);
   await db.user.deleteMany({ where: { id: MOCK_USER } }); // cascades progress and reviews
+
+  // Start `next dev` without Turbopack's dev filesystem cache (on by default since Next
+  // 16.1). A cache left poisoned by an earlier dev session (every run ends by force-killing
+  // its server) made the root layout's next/font/google CSS fail to resolve ("queries
+  // have exactly one entry"), so every page answered 500 on any commit. Only the cache
+  // directory goes; `.next/dev/node_modules` holds junctions into node_modules.
+  rmSync(".next/dev/cache/turbopack", { recursive: true, force: true });
 
   const port = await freePort();
   const base = `http://localhost:${port}`;
