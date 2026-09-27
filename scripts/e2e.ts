@@ -9,8 +9,9 @@
  * the full learner flow against the local Postgres (`npm run db:dev`):
  * course pick, a lesson with one mistake, the replay, a concurrent double completion,
  * a review session, the HUD across navigation and reload, the launcher summary across a
- * course switch, direct loads of both quiz routes, and the expired-session round trip
- * with the pending submission.
+ * course switch, direct loads of both quiz routes, the expired-session round trip
+ * with the pending submission, and "Return to Home Room" with the leave guard (a quiz is
+ * its own document; unsaved answers raise the in-page dialog or the browser's prompt).
  *
  * It resets the mock learner's rows first; it never touches production.
  */
@@ -18,7 +19,7 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import net from "node:net";
-import { chromium, type Page } from "playwright";
+import { chromium, type Dialog, type Page, type Route } from "playwright";
 import { createDbClient } from "../src/lib/db";
 
 try {
@@ -33,6 +34,8 @@ const HEADERS = {
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
 };
 const MOCK_USER = "mock-user";
+/** The portal's Home Room (home-room plan); the context routes it to a local stub. */
+const HOME = "https://class.travelschooling.com/";
 const failures: string[] = [];
 
 function check(cond: boolean, label: string) {
@@ -296,6 +299,37 @@ async function hudGems(page: Page): Promise<number> {
   return Number((await page.locator('[title="Gems"]').innerText()).replace(/\D+/g, ""));
 }
 
+/**
+ * Starts a departure and answers the browser's `beforeunload` prompt if one appears.
+ * Returns the dialog type seen (`beforeunload`), or null when none came within 5 s. The
+ * listener is removed afterwards: a leftover one would swallow the next dialog, and with
+ * none Playwright dismisses dialogs itself (which cancels the navigation).
+ */
+async function answerLeavePrompt(page: Page, action: "accept" | "dismiss", trigger: () => Promise<unknown>) {
+  let seen: string | null = null;
+  let handled!: () => void;
+  const done = new Promise<void>((r) => (handled = r));
+  const onDialog = async (d: Dialog) => {
+    seen = d.type();
+    await (action === "accept" ? d.accept() : d.dismiss()).catch(() => {});
+    handled();
+  };
+  page.on("dialog", onDialog);
+  try {
+    await trigger();
+    await Promise.race([done, new Promise((r) => setTimeout(r, 5000))]);
+  } finally {
+    page.off("dialog", onDialog);
+  }
+  return seen as string | null;
+}
+
+/** History steps from inside the page, so a cancelled departure never hangs a Playwright call. */
+const historyStep = (page: Page, dir: "back" | "forward") =>
+  page.evaluate((d) => {
+    setTimeout(() => (d === "back" ? history.back() : history.forward()), 0);
+  }, dir);
+
 async function learnerFlowInDevMode() {
   log("part (b): learner flow on the dev mock");
   if (!process.env.DATABASE_URL?.includes("localhost")) {
@@ -323,6 +357,7 @@ async function learnerFlowInDevMode() {
 
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
+    const homeRoom = () => page.getByRole("button", { name: "Return to Home Room", exact: true });
     // The expired-session step navigates to the portal; answer it locally, never the real one.
     await context.route("https://class.travelschooling.com/**", (route) =>
       route.fulfill({ status: 200, contentType: "text/html", body: "<title>portal stub</title>portal" })
@@ -334,6 +369,8 @@ async function learnerFlowInDevMode() {
     await page.goto(base + "/learn");
     await page.waitForURL("**/welcome", { timeout: 60_000 });
     check(true, "a new learner lands on the course picker");
+    await homeRoom().waitFor({ timeout: 60_000 });
+    check((await homeRoom().count()) === 1, "the course picker has a Return to Home Room button");
     const html = await (await fetch(base + "/welcome")).text();
     check(
       /<link rel="manifest" href="\/manifest.webmanifest" crossorigin="use-credentials"\/?>/.test(html),
@@ -349,6 +386,8 @@ async function learnerFlowInDevMode() {
     const first = lessons.find((l) => l.id === units.activeLessonId)!;
     const firstLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${first.id}`);
     await page.getByRole("button", { name: `${first.title} — start lesson` }).click();
+    // A lesson is a full document load now (home-room plan); the first compile in dev is slow.
+    await page.getByRole("heading", { name: firstLesson.challenges[0].prompt }).waitFor({ timeout: 60_000 });
     await playLesson(page, firstLesson.challenges, true);
     check((await resultStatus(page)) === "awarded", "first completion: award status awarded");
     check((await page.getByTestId("xp-earned").innerText()) === "10", "result screen shows 10 XP earned");
@@ -429,6 +468,7 @@ async function learnerFlowInDevMode() {
     const review = await json<{ challenges: Challenge[] }>("/api/review");
     await page.goto(base + "/review");
     await page.getByRole("button", { name: "Start review" }).click();
+    await page.getByRole("heading", { name: review.challenges[0].prompt }).waitFor({ timeout: 60_000 });
     for (const ch of review.challenges) await solveChallenge(page, ch, false);
     check((await resultStatus(page)) === "awarded", "review: award status awarded");
     me = await json<UserBody>("/api/user");
@@ -645,6 +685,198 @@ async function learnerFlowInDevMode() {
     const otherLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${otherCourseLesson.id}`);
     await page.getByRole("heading", { name: otherLesson.challenges[0].prompt }).waitFor({ timeout: 20_000 });
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: otherCourseLesson.id } })) === 0, "and never replays after switching back");
+
+    // --- Return to Home Room and the leave guard (home-room plan A3/A4). Last, because it
+    // completes a lesson and earlier checks compare absolute XP.
+    const noPrompt = async (label: string, trigger: () => Promise<unknown>, until: () => Promise<unknown>) => {
+      const seen: string[] = [];
+      const record = (d: Dialog) => {
+        seen.push(d.type());
+        void d.accept().catch(() => {});
+      };
+      page.on("dialog", record);
+      try {
+        await trigger();
+        await until();
+      } finally {
+        page.off("dialog", record);
+      }
+      check(seen.length === 0, `${label}: no browser leave prompt (saw ${seen.join(", ") || "none"})`);
+    };
+    const progressNow = () => page.getByRole("progressbar").getAttribute("aria-valuenow");
+
+    // Every main screen of the app shell has the button; on /learn it goes home.
+    for (const p of ["/review", "/awards", "/profile", "/learn"]) {
+      await page.goto(base + p);
+      await homeRoom().waitFor({ timeout: 60_000 });
+      check((await homeRoom().count()) === 1, `${p} has one Return to Home Room button`);
+    }
+    await hudXp(page);
+    await noPrompt("Home Room on /learn", () => homeRoom().click(), () => page.waitForURL(HOME, { timeout: 20_000 }));
+    check(page.url() === HOME, `Home Room on /learn navigates to the portal (got ${page.url()})`);
+
+    // Starting a lesson from the path is a document navigation.
+    const guardUnits = await json<Units>("/api/units");
+    const guard = guardUnits.sections
+      .flatMap((s) => s.units)
+      .flatMap((u) => u.lessons)
+      .find((l) => l.id === guardUnits.activeLessonId)!;
+    const guardData = await json<{ challenges: Challenge[] }>(`/api/lessons/${guard.id}`);
+    const guardFirst = () => page.getByRole("heading", { name: guardData.challenges[0].prompt });
+    await page.goto(base + "/learn");
+    await hudXp(page);
+    await page.evaluate(() => {
+      (window as unknown as { __wwMarker?: number }).__wwMarker = 1;
+    });
+    await page.getByRole("button", { name: `${guard.title} — start lesson` }).click();
+    await page.waitForURL(`**/lesson/${guard.id}`, { timeout: 30_000 });
+    await guardFirst().waitFor({ timeout: 60_000 });
+    check(
+      (await page.evaluate(() => (window as unknown as { __wwMarker?: number }).__wwMarker)) === undefined,
+      "starting a lesson from the path loads a new document (the page marker is gone)"
+    );
+    check((await homeRoom().count()) === 1, "the quiz has a Return to Home Room button above it");
+
+    // X before answering leaves without asking; Back, answer one, Forward: the browser asks.
+    await noPrompt(
+      "X before answering",
+      () => page.getByRole("button", { name: "Quit session" }).click(),
+      () => page.waitForURL("**/learn", { timeout: 20_000 })
+    );
+    await page.goBack();
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await solveChallenge(page, guardData.challenges[0], false);
+    const answered = await progressNow();
+    check(Number(answered) > 0, `one answer given (progress ${answered})`);
+    const forward = await answerLeavePrompt(page, "dismiss", () => historyStep(page, "forward"));
+    check(forward === "beforeunload", `Forward after answering raises the leave prompt (got ${forward})`);
+    await page.waitForTimeout(500);
+    check(
+      page.url().endsWith(`/lesson/${guard.id}`) && (await progressNow()) === answered,
+      "dismissing the Forward prompt keeps the quiz"
+    );
+    const back = await answerLeavePrompt(page, "dismiss", () => historyStep(page, "back"));
+    check(back === "beforeunload", `Back after answering raises the leave prompt (got ${back})`);
+    await page.waitForTimeout(500);
+    check(
+      page.url().endsWith(`/lesson/${guard.id}`) && (await progressNow()) === answered,
+      "dismissing the Back prompt keeps the quiz"
+    );
+    const backAccept = await answerLeavePrompt(page, "accept", () => historyStep(page, "back"));
+    await page.waitForURL("**/learn", { timeout: 20_000 });
+    check(backAccept === "beforeunload", "accepting the Back prompt leaves the lesson");
+
+    // Home Room with an answer given: the in-page dialog; Escape and Stay keep the quiz.
+    await page.goto(`${base}/lesson/${guard.id}`);
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await solveChallenge(page, guardData.challenges[0], false);
+    const kept = await progressNow();
+    await homeRoom().click();
+    const dialog = page.getByRole("dialog", { name: "Your lesson is not finished." });
+    await dialog.waitFor({ timeout: 10_000 });
+    check((await dialog.getAttribute("aria-modal")) === "true", "the dialog is modal");
+    check(
+      (await dialog.innerText()).includes("Finish it to save your progress. If you leave now, this lesson's answers are lost."),
+      "the dialog says what is unsaved and how to save it"
+    );
+    check(
+      await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') != null),
+      "focus moves into the dialog"
+    );
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      await page.evaluate(() => document.activeElement?.textContent?.includes("Return to Home Room") ?? false),
+      "Escape stays and returns focus to the button"
+    );
+    await homeRoom().click();
+    await dialog.getByRole("button", { name: "Stay and save" }).click();
+    await dialog.waitFor({ state: "detached", timeout: 5_000 });
+    check(
+      page.url().endsWith(`/lesson/${guard.id}`) && (await progressNow()) === kept,
+      "Stay and save keeps the question"
+    );
+
+    // The X asks too; Leave without saving goes to its usual place without a second prompt.
+    await page.getByRole("button", { name: "Quit session" }).click();
+    await dialog.waitFor({ timeout: 10_000 });
+    await noPrompt(
+      "X, Leave without saving",
+      () => dialog.getByRole("button", { name: "Leave without saving" }).click(),
+      () => page.waitForURL("**/learn", { timeout: 20_000 })
+    );
+
+    await page.goto(`${base}/lesson/${guard.id}`);
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await solveChallenge(page, guardData.challenges[0], false);
+    await homeRoom().click();
+    await dialog.waitFor({ timeout: 10_000 });
+    await noPrompt(
+      "Home Room, Leave without saving",
+      () => dialog.getByRole("button", { name: "Leave without saving" }).click(),
+      () => page.waitForURL(HOME, { timeout: 20_000 })
+    );
+    check(page.url() === HOME, "Home Room then Leave without saving goes to the portal");
+
+    // A finished lesson: Home Room on the result screen goes straight home.
+    await page.goto(`${base}/lesson/${guard.id}`);
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await playLesson(page, guardData.challenges, false);
+    await resultStatus(page);
+    await noPrompt(
+      "Home Room on the result screen",
+      () => homeRoom().click(),
+      () => page.waitForURL(HOME, { timeout: 20_000 })
+    );
+    check(
+      (await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: guard.id } })) === 1,
+      "the finished lesson was saved before leaving"
+    );
+
+    // A kept submission being resent: Home Room waits for it (at most 2 s).
+    const [shortWait, longWait] = [11, 12].map(at);
+    const pendingFor = (l: { id: string }) => ({
+      path: `/lesson/${l.id}`,
+      url: `/api/lessons/${l.id}/complete`,
+      body: lessonBody(),
+      userId: MOCK_USER,
+      courseCode: "es",
+      accuracy: 1,
+    });
+    const delayed = (ms: number) => async (route: Route) => {
+      await new Promise((r) => setTimeout(r, ms));
+      await route.continue().catch(() => {});
+    };
+
+    await page.goto(base + "/learn");
+    await setPending(pendingFor(shortWait));
+    await page.route(`**/api/lessons/${shortWait.id}/complete`, delayed(1500));
+    await page.goto(`${base}/lesson/${shortWait.id}`);
+    await page.getByText("Saving your answers").waitFor({ timeout: 60_000 });
+    await homeRoom().click();
+    await page.waitForURL(HOME, { timeout: 20_000 });
+    await page.unroute(`**/api/lessons/${shortWait.id}/complete`);
+    check(
+      (await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: shortWait.id } })) === 1,
+      "Home Room waited for the resend to finish before leaving"
+    );
+    await page.goto(base + "/learn");
+    check((await pendingStored()) === null, "and the kept submission was cleared");
+
+    await setPending(pendingFor(longWait));
+    await page.route(`**/api/lessons/${longWait.id}/complete`, delayed(5000));
+    await page.goto(`${base}/lesson/${longWait.id}`);
+    await page.getByText("Saving your answers").waitFor({ timeout: 60_000 });
+    const pressed = Date.now();
+    await homeRoom().click();
+    await page.waitForURL(HOME, { timeout: 20_000 });
+    const waited = Date.now() - pressed;
+    check(waited >= 1800 && waited < 4500, `Home Room gives a slow resend about 2 s, then leaves (waited ${waited} ms)`);
+    await page.unroute(`**/api/lessons/${longWait.id}/complete`);
+    await page.goto(base + "/learn");
+    const leftBehind = await pendingStored();
+    check(leftBehind !== null && leftBehind.includes(longWait.id), "the kept submission stays for the next visit");
+    await page.evaluate(() => sessionStorage.removeItem("wordwave:pending-submission"));
 
     await context.close();
   } finally {

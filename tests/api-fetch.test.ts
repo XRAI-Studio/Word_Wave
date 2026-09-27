@@ -14,13 +14,17 @@ describe("apiFetch (work order criterion 21)", () => {
     expect(authRedirectTarget(409, HERE)).toBeNull();
   });
 
-  it("keeps the submission, navigates and throws RedirectingError on 401", async () => {
+  it("keeps the submission, lets the page go, navigates and throws RedirectingError on 401", async () => {
     const order: string[] = [];
     const navigate = vi.fn(() => {
       order.push("navigate");
     });
     const beforeRedirect = vi.fn(() => {
       order.push("save");
+      return true;
+    });
+    const allowUnload = vi.fn(() => {
+      order.push("allowUnload");
     });
     await expect(
       apiFetch("/api/x", undefined, {
@@ -28,9 +32,41 @@ describe("apiFetch (work order criterion 21)", () => {
         href: () => HERE,
         navigate,
         beforeRedirect,
+        allowUnload,
       })
     ).rejects.toBeInstanceOf(RedirectingError);
-    expect(order).toEqual(["save", "navigate"]);
+    expect(order).toEqual(["save", "allowUnload", "navigate"]);
+  });
+
+  it("keeps the leave guard on when the submission could not be stored (HR-004)", async () => {
+    const navigate = vi.fn();
+    const allowUnload = vi.fn();
+    await expect(
+      apiFetch("/api/x", undefined, {
+        fetch: (async () => new Response("{}", { status: 401 })) as typeof fetch,
+        href: () => HERE,
+        navigate,
+        beforeRedirect: () => false,
+        allowUnload,
+      })
+    ).rejects.toBeInstanceOf(RedirectingError);
+    expect(allowUnload).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the leave guard on for a redirect with nothing kept", async () => {
+    const navigate = vi.fn();
+    const allowUnload = vi.fn();
+    await expect(
+      apiFetch("/api/x", undefined, {
+        fetch: (async () => new Response("{}", { status: 403 })) as typeof fetch,
+        href: () => HERE,
+        navigate,
+        allowUnload,
+      })
+    ).rejects.toBeInstanceOf(RedirectingError);
+    expect(allowUnload).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("https://class.travelschooling.com/waiting");
   });
 
   it("passes every other response through", async () => {

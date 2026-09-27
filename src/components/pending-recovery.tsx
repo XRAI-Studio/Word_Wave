@@ -5,6 +5,7 @@ import { ChunkyButton } from "@/components/chunky-button";
 import { useKit } from "@/components/kit-provider";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
+import { leaveGuard } from "@/lib/leave-guard";
 import type { AwardOutcome } from "@/lib/completion";
 import { belongsTo, clearPending, hasPendingFor, peekPending, type PendingSubmission } from "@/lib/pending-submission";
 import { useGameStore } from "@/lib/store";
@@ -81,7 +82,7 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
       return;
     }
     setState({ kind: "checking" });
-    void run(pending);
+    void leaveGuard.track(run(pending));
   }
 
   // Development's StrictMode runs mount effects twice; the submission stays stored until
@@ -92,10 +93,12 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
     if (started.current) return;
     started.current = true;
     const pending = peekPending(window.sessionStorage, window.location.pathname);
+    // Tracked, so a clean "Return to Home Room" waits for it (at most 2 s; if it is still
+    // going then, the stored submission stays for the next visit).
     // `run` sets state only after its first await (an external fetch), which is what
     // this rule is meant to allow; it cannot see that through the function call.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (pending && kit.user) void run(pending);
+    if (pending && kit.user) void leaveGuard.track(run(pending));
     // Once per mount of the route; Try again calls `retry`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -105,7 +108,7 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
   if (state.kind === "failed") {
     return (
       <div
-        className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 text-center"
+        className="flex flex-1 flex-col items-center justify-center gap-4 px-6 text-center"
         data-testid="recovery-failed"
       >
         <p className="font-display text-xl font-extrabold">Couldn&apos;t save your answers yet</p>

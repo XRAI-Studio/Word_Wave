@@ -3,6 +3,7 @@
 import { use, useEffect, useState } from "react";
 import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
+import { SessionPage } from "@/components/session-bar";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
@@ -15,12 +16,16 @@ interface LessonResponse {
   challenges: ChallengeDTO[];
 }
 
-// A submission kept across a portal sign-in is resolved before the lesson loads.
+// A submission kept across a portal sign-in is resolved before the lesson loads. The
+// page is its own document (entered and left by full navigations, home-room plan), with
+// the Home Room bar above every branch.
 export default function LessonPage({ params }: { params: Promise<{ lessonId: string }> }) {
   return (
-    <PendingRecovery mode="lesson">
-      <LessonLoader params={params} />
-    </PendingRecovery>
+    <SessionPage>
+      <PendingRecovery mode="lesson">
+        <LessonLoader params={params} />
+      </PendingRecovery>
+    </SessionPage>
   );
 }
 

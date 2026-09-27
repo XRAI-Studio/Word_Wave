@@ -4,12 +4,16 @@
  * and quiz, so it is reloaded under the new one; the old learner's unsaved answers are
  * dropped, never relabelled (Codex WW-P5-R3-002). The flag lets the reloaded page say why.
  */
+import { leaveGuard } from "@/lib/leave-guard";
+
 export const ACCOUNT_CHANGED_KEY = "wordwave:account-changed";
 
 export function reloadForAccountChange(): void {
   try {
     window.sessionStorage.setItem(ACCOUNT_CHANGED_KEY, "1");
   } catch {}
+  // Dropping them is the point: no "unsaved work" prompt for answers that are not theirs.
+  leaveGuard.allowUnload();
   window.location.reload();
 }
 

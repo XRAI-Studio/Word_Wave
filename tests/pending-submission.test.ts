@@ -51,6 +51,18 @@ describe("pending submission (work order criterion 21)", () => {
     expect(s.getItem(PENDING_KEY)).not.toBeNull();
   });
 
+  it("says whether it was stored (the leave guard stays on when not, HR-004)", () => {
+    expect(savePending(new Mem(), p)).toBe(true);
+    const full = {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {},
+    };
+    expect(savePending(full, p)).toBe(false);
+  });
+
   it("reports whether a submission waits for a route", () => {
     const s = new Mem();
     expect(hasPendingFor(s, "/lesson/L1")).toBe(false);

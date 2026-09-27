@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { BookOpen, Check, ChevronDown, Star } from "lucide-react";
 import {
   DropdownMenu,
@@ -30,7 +30,6 @@ interface CourseData {
 
 // Sidebar dropdown to jump straight to any lesson in the course.
 export function CourseMenu() {
-  const router = useRouter();
   const pathname = usePathname();
   const [course, setCourse] = useState<CourseData | null>(null);
 
@@ -79,7 +78,7 @@ export function CourseMenu() {
                 {unit.lessons.map((lesson) => (
                   <DropdownMenuItem
                     key={lesson.id}
-                    onClick={() => router.push(`/lesson/${lesson.id}`)}
+                    onClick={() => window.location.assign(`/lesson/${lesson.id}`)}
                     className="pl-6"
                   >
                     <span className="flex-1">{lesson.title}</span>

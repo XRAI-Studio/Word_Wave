@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Flame, Gem, Zap } from "lucide-react";
+import { HomeRoomButton } from "@/components/home-room";
 import { useGameStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { apiFetch } from "@/lib/api-fetch";
@@ -149,10 +150,13 @@ export function TopBar({
           </span>
         </div>
       </div>
-      <p className="mt-1 text-center text-xs font-semibold text-ink-soft">
-        {courseStats.levels} levels · {courseStats.sections} sections · {courseStats.units} units ·{" "}
-        {courseStats.lessons} lessons
-      </p>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <p className="text-xs font-semibold text-ink-soft">
+          {courseStats.levels} levels · {courseStats.sections} sections · {courseStats.units} units ·{" "}
+          {courseStats.lessons} lessons
+        </p>
+        <HomeRoomButton />
+      </div>
     </header>
   );
 }

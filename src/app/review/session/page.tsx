@@ -1,21 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
+import { SessionPage } from "@/components/session-bar";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 type Labels = { correct: string; celebrate: string };
 const DEFAULT_LABELS: Labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" };
 
-// A submission kept across a portal sign-in is resolved before the review loads.
+// A submission kept across a portal sign-in is resolved before the review loads. The
+// page is its own document (entered and left by full navigations, home-room plan), with
+// the Home Room bar above every branch.
 export default function ReviewSessionPage() {
   return (
-    <PendingRecovery mode="review">
-      <ReviewLoader />
-    </PendingRecovery>
+    <SessionPage>
+      <PendingRecovery mode="review">
+        <ReviewLoader />
+      </PendingRecovery>
+    </SessionPage>
   );
 }
 
@@ -52,9 +56,13 @@ function ReviewLoader() {
         <p className="mt-2 text-ink-soft">
           Words you miss in lessons will show up here when they&apos;re due.
         </p>
-        <Link href="/learn" className="mt-6 inline-block font-bold text-brand underline">
+        <button
+          type="button"
+          onClick={() => window.location.assign("/learn")}
+          className="mt-6 inline-block rounded font-bold text-brand underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+        >
           Back to the path
-        </Link>
+        </button>
       </div>
     );
   }

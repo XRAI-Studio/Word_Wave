@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Check, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,8 +23,6 @@ export function LessonPath({
   unitNumber: number;
   activeLessonId: string | null;
 }) {
-  const router = useRouter();
-
   return (
     <section className="mt-8">
       <div className="rounded-3xl bg-brand text-white px-6 py-5 border-b-4 border-brand-deep">
@@ -58,7 +55,8 @@ export function LessonPath({
                   </span>
                 )}
                 <button
-                  onClick={() => router.push(`/lesson/${lesson.id}`)}
+                  // A lesson is its own document (home-room plan): a full navigation.
+                  onClick={() => window.location.assign(`/lesson/${lesson.id}`)}
                   aria-label={`${lesson.title} — ${
                     state === "done" ? "completed, practice again" : state === "active" ? "start lesson" : "jump ahead"
                   }`}

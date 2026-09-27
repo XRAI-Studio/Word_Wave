@@ -25,11 +25,15 @@ export interface StorageLike {
   removeItem(key: string): void;
 }
 
-export function savePending(storage: StorageLike, p: PendingSubmission): void {
+/** Keeps the submission; true when it was stored. */
+export function savePending(storage: StorageLike, p: PendingSubmission): boolean {
   try {
     storage.setItem(PENDING_KEY, JSON.stringify(p));
+    return true;
   } catch {
-    // Storage full or disabled: the learner replays the quiz; nothing else breaks.
+    // Storage full or disabled: the learner replays the quiz; nothing else breaks. The
+    // leave guard stays on, so the browser asks before the answers are dropped.
+    return false;
   }
 }
 

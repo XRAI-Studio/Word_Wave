@@ -5,6 +5,8 @@
  * portal login with this page as `next`, 403 to the portal's waiting page.
  */
 
+import { leaveGuard } from "@/lib/leave-guard";
+
 export const PORTAL = "https://class.travelschooling.com";
 
 /** Thrown after navigation has started, so callers stop instead of showing an error. */
@@ -21,8 +23,14 @@ export function authRedirectTarget(status: number, href: string): string | null 
 }
 
 export interface ApiFetchOptions {
-  /** Runs just before the browser leaves for the portal (e.g. to keep a submission). */
-  beforeRedirect?: () => void;
+  /**
+   * Runs just before the browser leaves for the portal, to keep the page's work (e.g. a
+   * submission). Returns true when the work was kept: only then is the page let go
+   * without the unsaved-work prompt (home-room plan, HR-004); otherwise the guard stays on.
+   */
+  beforeRedirect?: () => boolean;
+  /** Lets the document leave without the prompt (the page's leave guard by default). */
+  allowUnload?: () => void;
   navigate?: (url: string) => void;
   href?: () => string;
   fetch?: typeof fetch;
@@ -32,7 +40,7 @@ export async function apiFetch(input: string, init?: RequestInit, o: ApiFetchOpt
   const res = await (o.fetch ?? fetch)(input, init);
   const target = authRedirectTarget(res.status, (o.href ?? (() => window.location.href))());
   if (target) {
-    o.beforeRedirect?.();
+    if (o.beforeRedirect?.() === true) (o.allowUnload ?? (() => leaveGuard.allowUnload()))();
     (o.navigate ?? ((url: string) => window.location.assign(url)))(target);
     throw new RedirectingError();
   }

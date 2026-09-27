@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { Award, Flame, Gem, Target, Zap } from "lucide-react";
 import { ChunkyButton } from "@/components/chunky-button";
 import type { AwardOutcome } from "@/lib/completion";
@@ -31,7 +30,6 @@ export function ResultScreen({
   accuracy: number; // 0..1
   celebrateLabel?: string;
 }) {
-  const router = useRouter();
   const totals = award.result;
   // Gems and streak are the learner's current ones (the HUD's), not the award's snapshot,
   // which for a repeated submission is historical (WW-P5-R4-002).
@@ -39,7 +37,7 @@ export function ResultScreen({
   const message = awardMessage(award, mode);
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center px-6 py-10 text-center">
+    <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
       <h1 className="font-display text-3xl font-extrabold text-verde">{celebrateLabel}</h1>
       <p className="mt-1 text-ink-soft">Session complete</p>
 
@@ -88,7 +86,7 @@ export function ResultScreen({
         </div>
       )}
 
-      <ChunkyButton className="mt-10 w-full max-w-md" onClick={() => router.push("/learn")}>
+      <ChunkyButton className="mt-10 w-full max-w-md" onClick={() => window.location.assign("/learn")}>
         Back to the path
       </ChunkyButton>
     </div>

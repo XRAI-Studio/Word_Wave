@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { BookOpenCheck } from "lucide-react";
 import { ChunkyButton } from "@/components/chunky-button";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
 export default function ReviewPage() {
   const [dueCount, setDueCount] = useState<number | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     apiFetch("/api/review")
@@ -40,7 +38,7 @@ export default function ReviewPage() {
         <ChunkyButton
           className="mt-6 w-full"
           disabled={!dueCount}
-          onClick={() => router.push("/review/session")}
+          onClick={() => window.location.assign("/review/session")}
         >
           Start review
         </ChunkyButton>
