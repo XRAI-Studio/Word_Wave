@@ -30,14 +30,15 @@ function fakeWindow() {
 function setup() {
   const win = fakeWindow();
   const navigate = vi.fn();
-  const guard = createLeaveGuard({ target: win, navigate });
+  const stop = vi.fn();
+  const guard = createLeaveGuard({ target: win, navigate, stop });
   let unsaved = false;
   const unregister = guard.register({ kind: "lesson", hasUnsavedWork: () => unsaved });
   const set = (v: boolean) => {
     unsaved = v;
     guard.refresh();
   };
-  return { win, navigate, guard, set, unregister };
+  return { win, navigate, stop, guard, set, unregister };
 }
 
 describe("leave guard (home-room plan, Word Wave)", () => {
@@ -348,6 +349,29 @@ describe("leave guard (home-room plan, Word Wave)", () => {
       await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS - 1000); // t=5 s
       expect(guard.isDeparting()).toBe(false);
       expect(navigate).toHaveBeenCalledTimes(2);
+    });
+
+    it("at 3 s it cancels a navigation still loading before giving the page back (WW-HR-006)", async () => {
+      const { win, stop, guard, set } = setup();
+      set(true);
+      const order: string[] = [];
+      stop.mockImplementation(() => order.push(`stop (departing=${guard.isDeparting()})`));
+      guard.subscribe(() => order.push(`departing=${guard.isDeparting()}`));
+      guard.leave(HOME); // a slow destination: the browser is still loading it
+      await vi.advanceTimersByTimeAsync(STALLED_DEPARTURE_MS - 1);
+      expect(stop).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(order).toEqual(["departing=true", "stop (departing=true)", "departing=false"]);
+      expect(win.beforeUnload()).toBe(true); // answers given from now on are protected
+    });
+
+    it("a late timer from an older departure stops nothing", async () => {
+      const { win, stop, guard } = setup();
+      guard.leave(HOME);
+      await vi.advanceTimersByTimeAsync(1000);
+      win.pageshow(true); // that departure is over
+      await vi.advanceTimersByTimeAsync(2000); // its timer fires
+      expect(stop).not.toHaveBeenCalled();
     });
 
     it("a press that finds unsaved answers ends its departure at once", async () => {

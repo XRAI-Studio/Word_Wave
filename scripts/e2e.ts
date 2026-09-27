@@ -864,6 +864,44 @@ async function learnerFlowInDevMode() {
     );
     await page.waitForURL("**/learn", { timeout: 20_000 });
 
+    // A slow destination (Codex WW-HR-006): the portal answers 200 only after 5 s. At 3 s
+    // the page cancels that navigation, so it never commits over what the learner does
+    // next; answering works, and a later Home Room press still leaves.
+    await page.route(HOME, async (route) => {
+      await new Promise((r) => setTimeout(r, 5_000));
+      await route.fulfill({ status: 200, contentType: "text/html", body: "<title>slow portal</title>slow" }).catch(() => {});
+    });
+    await page.goto(`${base}/lesson/${guard.id}`);
+    await guardFirst().waitFor({ timeout: 60_000 });
+    await solveChallenge(page, guardData.challenges[0], false);
+    const beforeSlow = Number(await progressNow());
+    await homeRoom().click();
+    await dialog.waitFor({ timeout: 10_000 });
+    const slowLeftAt = Date.now();
+    await dialog
+      .getByRole("button", { name: "Leave without saving" })
+      .evaluate((el) => (el as HTMLButtonElement).click());
+    await page.waitForTimeout(3_500);
+    check(page.url().endsWith(`/lesson/${guard.id}`), "a slow destination: still on the quiz after 3 s");
+    check((await homeRoom().getAttribute("aria-disabled")) === null, "and the quiz is given back");
+    await solveChallenge(page, guardData.challenges[1], false);
+    const afterSlow = Number(await progressNow());
+    check(afterSlow > beforeSlow, `answering works again (progress ${beforeSlow} -> ${afterSlow})`);
+    await page.waitForTimeout(Math.max(0, 7_000 - (Date.now() - slowLeftAt)));
+    check(
+      page.url().endsWith(`/lesson/${guard.id}`) && Number(await progressNow()) === afterSlow,
+      `the cancelled navigation never commits (7 s on: ${page.url()})`
+    );
+    await page.unroute(HOME);
+    await homeRoom().click();
+    await dialog.waitFor({ timeout: 10_000 });
+    await noPrompt(
+      "a later Home Room, Leave without saving",
+      () => dialog.getByRole("button", { name: "Leave without saving" }).click(),
+      () => page.waitForURL(HOME, { timeout: 20_000 })
+    );
+    check(page.url() === HOME, "a later Home Room press still leaves normally");
+
     // A finished lesson: Home Room on the result screen goes straight home.
     await page.goto(`${base}/lesson/${guard.id}`);
     await guardFirst().waitFor({ timeout: 60_000 });

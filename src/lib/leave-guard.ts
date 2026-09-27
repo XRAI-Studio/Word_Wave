@@ -19,8 +19,9 @@ export const HOME = "https://class.travelschooling.com/";
 /** How long a clean departure waits for tracked saves (plan A3: at most 2 s). */
 export const LEAVE_DEADLINE_MS = 2000;
 
-/** A departure whose document is still here this long after `location.assign` was
- *  stopped (the browser's Stop, a failed load): the page goes back to normal. */
+/** A departure whose document is still here this long after `location.assign` is over:
+ *  whatever navigation may still be loading is cancelled (`window.stop()`) and the page
+ *  goes back to normal. Stopped by the learner, a 204, a failed or a slow load alike. */
 export const STALLED_DEPARTURE_MS = 3000;
 
 export type UnsavedKind = "lesson" | "review";
@@ -57,9 +58,10 @@ export interface LeaveGuard {
   resume(): void;
   /**
    * Disarms, then navigates (a full document navigation). The departure lasts until the
-   * document goes; if it is still here `STALLED_DEPARTURE_MS` later, the guard, the prompt
-   * and every "leaving" state go back to normal (a late timer from an older departure is
-   * ignored).
+   * document goes; if it is still here `STALLED_DEPARTURE_MS` later, any navigation still
+   * loading is cancelled first (so a slow destination cannot commit later and drop what
+   * the learner does next), then the guard, the prompt and every "leaving" state go back
+   * to normal. A late timer from an older departure does nothing.
    */
   leave(url: string): void;
   /**
@@ -85,6 +87,8 @@ export interface LeaveGuard {
 export function createLeaveGuard(o: {
   target: EventTargetLike | null;
   navigate: (url: string) => void;
+  /** Cancels a navigation still in flight (`window.stop()`). */
+  stop?: () => void;
 }): LeaveGuard {
   let source: UnsavedSource | null = null;
   let armed = false;
@@ -156,7 +160,13 @@ export function createLeaveGuard(o: {
     const a = departing ? attempt : beginDeparture();
     allowUnload();
     o.navigate(url);
-    setTimeout(() => endDeparture(a), STALLED_DEPARTURE_MS);
+    setTimeout(() => {
+      if (a !== attempt) return; // an older departure's timer
+      // Stop first (Codex WW-HR-006): a destination answering after this point would
+      // otherwise replace the page after the learner has carried on.
+      o.stop?.();
+      endDeparture(a);
+    }, STALLED_DEPARTURE_MS);
   }
 
   async function settle(deadlineMs = LEAVE_DEADLINE_MS) {
@@ -234,4 +244,5 @@ export function createLeaveGuard(o: {
 export const leaveGuard: LeaveGuard = createLeaveGuard({
   target: typeof window === "undefined" ? null : window,
   navigate: (url) => window.location.assign(url),
+  stop: () => window.stop(),
 });
