@@ -322,3 +322,28 @@ database migrated to `20260925222918_submission_ids`; live gate, API 401 and the
 scottmacscott.com redirect unchanged. Round accounting so far: plan review 3 rounds
 (approved), fix rounds 4, inspections 4 completed (all REVISE, every finding fixed) plus
 1 blocked.
+
+## Inspection 5 (after the Codex login) — Codex (REVISE, 3 medium)
+
+Runner result `claudex-runs/claudex-_goup9fi/result.json` (scratchpad of session
+`d4ddff9e`), fresh session `01a0e964-fa96-7b43-93bd-fa4446a6600c`, base `a70ebfa`,
+inspected tree `8cb5d1d` (fix round 4 + its log, in a detached worktree; the later Home
+Room commits `01076b9`..`ce4bcb2` were inspected in their own loop, portal
+`PLAN-REVIEW-LOG.md`). CLI `codex-cli 0.153.4`, requested model: CLI default
+(`gpt-6-astra` / `high`), observed model: not reported. Usage 2,169,594 input (1,940,864
+cached), 6,278 output; 248 s. Checked against `master` `ce4bcb2`: all three still apply.
+
+- **WW-P5-R5-001** (`quiz.tsx`, `pending-recovery.tsx`) a `duplicate` response leaves the
+  HUD's XP, gems and streak at their pre-completion values (the kit hydrates only at boot),
+  e.g. a same-page retry after a lost response, or recovery that polls an award still
+  finishing. The server's totals are right; the HUD is stale until a reload.
+- **WW-P5-R5-002** (`pending-recovery.tsx:53`) when `/api/user` reports a different
+  learner than the booted kit, recovery discards the old submission and renders the new
+  learner's quiz under the old kit identity; finishing it gets `user-mismatch` and the
+  new answers are dropped by the reload. Same after a `user-mismatch` from the resend.
+- **WW-P5-R5-003** (`submit-completion.ts:38`) an ordinary finished quiz is kept in
+  sessionStorage only on a 401/403 redirect; during the first POST, a network failure or
+  202 polling it lives only in memory, so a reload (past the leave prompt) loses the
+  answers and the submissionId that would recover the server's outcome.
+
+Disposition: awaiting the user (inspection budget long exceeded; see below).
