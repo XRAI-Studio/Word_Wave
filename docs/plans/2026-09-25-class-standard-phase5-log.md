@@ -401,3 +401,30 @@ Tests: unit (`tests/pending-submission.test.ts` +4, `tests/leave-guard.test.ts` 
 e2e "a later quiz never overwrites a kept one" and "Leave without saving drops the copy
 kept for a resend". Proof: `npm run verify` PASS (19 files / 164 tests); `npm run e2e`
 ALL E2E CHECKS PASSED (160 checks).
+
+## Targeted re-check of fix round 6 — Codex (REVISE, 2 medium; accepted as follow-ups)
+
+Runner result `claudex-runs/claudex-frsk1u88/result.json`, fresh session
+`01a0e97c-3c68-7731-8d16-abc267d3b47b`, base `1a119dc`, tree `3ce7c9e`, scope limited to
+fix round 6; CLI default (`gpt-6-astra` / `high`); usage 663,989 input (569,088 cached),
+2,575 output; 117 s. R6-002 resolved; R6-001's reported scenario (a later quiz saving
+successfully) resolved. Two findings, both about the single sessionStorage slot:
+
+- **WW-P5-R7-001** a stored A, then quiz B gets 401/403: `postCompletion`'s
+  `beforeRedirect` still overwrites A with B. *Pre-existing:* that write is the original
+  criterion-21 code, present at every Phase 5 inspection (including `8cb5d1d`); not
+  introduced by fix rounds 5 or 6.
+- **WW-P5-R7-002** while A is stored, `keepPending(B)` declines, so a B whose send fails
+  before the server and is reloaded is lost. *The accepted single-slot limit:* B has
+  exactly the protection it had at `8cb5d1d`; round 5 added the safety net whenever the
+  slot is free, round 6 stopped it clobbering another quiz.
+
+Compared with `8cb5d1d`, `3ce7c9e` is at least as safe on every path (A kept when B
+succeeds; B kept when nothing else waits; Leave without saving discards). Disposition:
+closed for Phase 5; **follow-up:** one kept submission per route (per-route keys, a
+legacy read of the single key, a non-destructive `beforeRedirect`) as its own small work
+order with its own review, if the user wants it.
+
+**Round accounting, Phase 5:** plan review 3 rounds (approved), fix rounds 6, inspections
+5 full + 2 targeted re-checks. Closed: every finding through WW-P5-R6-002. Open: the
+per-route follow-up (R7-001, R7-002), by decision.
