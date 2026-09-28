@@ -146,6 +146,9 @@ export function useGuardedLeave() {
             // WW-HR-004). A stopped navigation gives the page back with the guard re-armed.
             setPrompt(null);
             openerRef.current = null;
+            // The answers are dropped as the dialog says, including a copy kept for a
+            // later resend (WW-P5-R6-002).
+            leaveGuard.discard();
             leaveGuard.leave(prompt.url);
           }}
         />,

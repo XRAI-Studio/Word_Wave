@@ -389,3 +389,18 @@ describe("leave guard (home-room plan, Word Wave)", () => {
     expect(guard.isArmed()).toBe(false);
   });
 });
+
+describe("discard (WW-P5-R6-002)", () => {
+  it("asks the registered page to drop what it kept, and is harmless without one", () => {
+    const guard = createLeaveGuard({ target: fakeWindow(), navigate: vi.fn(), stop: vi.fn() });
+    expect(() => guard.discard()).not.toThrow();
+    const discard = vi.fn();
+    const unregister = guard.register({ kind: "lesson", hasUnsavedWork: () => true, discard });
+    guard.discard();
+    expect(discard).toHaveBeenCalledOnce();
+    unregister();
+    guard.discard();
+    expect(discard).toHaveBeenCalledOnce();
+  });
+});
+

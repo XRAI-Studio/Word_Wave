@@ -62,6 +62,35 @@ export function clearPending(storage: StorageLike, path: string): void {
   if (peekPending(storage, path)) storage.removeItem(PENDING_KEY);
 }
 
+/** The quiz's own id inside the body both completion routes take. */
+function submissionIdOf(p: PendingSubmission): unknown {
+  return (p.body as { submissionId?: unknown } | null)?.submissionId;
+}
+
+const same = (a: PendingSubmission, b: PendingSubmission) =>
+  a.path === b.path && submissionIdOf(a) !== undefined && submissionIdOf(a) === submissionIdOf(b);
+
+/**
+ * Keeps an ordinary quiz's submission before its first send (Codex WW-P5-R5-003), unless
+ * another quiz's kept submission is already waiting: that one is never overwritten
+ * (WW-P5-R6-001), and this quiz then goes without the extra safety net. True when kept.
+ */
+export function keepPending(storage: StorageLike, p: PendingSubmission): boolean {
+  const stored = read(storage);
+  if (stored && !same(stored, p)) return false;
+  return savePending(storage, p);
+}
+
+/** Removes the stored submission only if it is this very quiz (same route and id). */
+export function clearPendingFor(storage: StorageLike, p: PendingSubmission): void {
+  const stored = read(storage);
+  if (stored && same(stored, p)) {
+    try {
+      storage.removeItem(PENDING_KEY);
+    } catch {}
+  }
+}
+
 /**
  * Whether a kept submission may be sent for the learner and active course the server
  * reports now. Anything else (another account signed in on this tab, or the course

@@ -443,10 +443,11 @@ async function learnerFlowInDevMode() {
     // 7 failed profile lookup, 8 user-mismatch refusal of a kept submission,
     // 9 account change during an ordinary quiz, 10 an award made in between, 11 a lost
     // response then a reload, 12 a lost response then Continue, 13 a kit identity the
-    // server no longer has.
+    // server no longer has, 14/15 a kept quiz and a later one, 16 a failed send then
+    // Leave without saving.
     const at = (n: number) => lessons[lessons.indexOf(first) + n];
-    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson, switchLesson, betweenLesson, keptLesson, sameRetryLesson, identityLesson] =
-      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map(at);
+    const [second, third, overlapLesson, retryLesson, otherCourseLesson, mismatchLesson, lookupLesson, refusedLesson, switchLesson, betweenLesson, keptLesson, sameRetryLesson, identityLesson, waitingLesson, laterLesson, discardLesson] =
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].map(at);
     const setPending = (p: object) =>
       page.evaluate((v) => sessionStorage.setItem("wordwave:pending-submission", JSON.stringify(v)), p);
     const pendingStored = () => page.evaluate(() => sessionStorage.getItem("wordwave:pending-submission"));
@@ -672,8 +673,10 @@ async function learnerFlowInDevMode() {
     check((await pendingStored()) === null, "and lets it go");
     check((await json<UserBody>("/api/user")).devTotals?.xp === xpKept, "without a second award");
 
-    // --- a repeat moves the HUD to the current totals (WW-P5-R5-001): a lost response,
-    // then Continue on the same page, then back to the path without a reload.
+    // --- a repeat after a lost response (WW-P5-R5-001): Continue on the same page shows
+    // the recorded outcome. The quiz page has no HUD and "Back to the path" loads a new
+    // document, so the HUD here is re-read at start-up; the repeat's own totals rule is
+    // unit-tested (tests/submit-completion.test.ts).
     const sameData = await json<{ challenges: Challenge[] }>(`/api/lessons/${sameRetryLesson.id}`);
     await page.goto(`${base}/lesson/${sameRetryLesson.id}`);
     for (const ch of sameData.challenges.slice(0, -1)) await solveChallenge(page, ch, false);
@@ -685,7 +688,7 @@ async function learnerFlowInDevMode() {
     const xpSame = (await json<UserBody>("/api/user")).devTotals?.xp;
     await page.getByRole("button", { name: "Back to the path" }).click();
     await page.waitForURL("**/learn");
-    check((await hudXp(page)) === xpSame, `the HUD shows the current totals after a repeat (HUD ${xpSame})`);
+    check((await hudXp(page)) === xpSame, `back on the path the HUD shows the server's totals (HUD ${xpSame})`);
 
     // --- the server names another learner than the one this page's kit started as
     // (WW-P5-R5-002): recovery reloads before any quiz renders under the old identity.
@@ -703,6 +706,35 @@ async function learnerFlowInDevMode() {
     await page.unroute("**/api/user");
     check((await pendingStored()) === null, "recovery under a changed identity reloads and drops the other learner's answers");
     check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: identityLesson.id } })) === 0, "and sends nothing");
+
+    // --- a later quiz never overwrites a kept one (WW-P5-R6-001)
+    const waitingPath = `/lesson/${waitingLesson.id}`;
+    await setPending({ path: waitingPath, url: `/api/lessons/${waitingLesson.id}/complete`, body: lessonBody(), userId: MOCK_USER, courseCode: "es", accuracy: 1 });
+    const laterData = await json<{ challenges: Challenge[] }>(`/api/lessons/${laterLesson.id}`);
+    await page.goto(`${base}/lesson/${laterLesson.id}`);
+    await playLesson(page, laterData.challenges, false);
+    check((await resultStatus(page)) === "awarded", "a later quiz saves normally while another is kept");
+    check(JSON.parse((await pendingStored()) ?? "{}").path === waitingPath, "and the kept one is still there");
+    await page.goto(base + waitingPath);
+    check((await resultStatus(page)) === "awarded", "which is sent on its own route's next visit");
+    check((await pendingStored()) === null, "and then let go");
+
+    // --- Leave without saving drops the copy kept for a resend (WW-P5-R6-002)
+    const discardData = await json<{ challenges: Challenge[] }>(`/api/lessons/${discardLesson.id}`);
+    await page.goto(`${base}/lesson/${discardLesson.id}`);
+    for (const ch of discardData.challenges.slice(0, -1)) await solveChallenge(page, ch, false);
+    await page.route(`**/api/lessons/${discardLesson.id}/complete`, (route) => route.abort(), { times: 1 });
+    await solveChallenge(page, discardData.challenges[discardData.challenges.length - 1], false);
+    await page.getByText("Couldn't save your progress").first().waitFor({ timeout: 20_000 });
+    check((await pendingStored()) !== null, "a failed send is kept for a resend");
+    await page.getByRole("button", { name: "Quit session" }).click();
+    await page.getByRole("dialog", { name: "Your lesson is not finished." }).waitFor({ timeout: 10_000 });
+    await page.getByRole("button", { name: "Leave without saving" }).click();
+    await page.waitForURL("**/learn", { timeout: 20_000 });
+    check((await pendingStored()) === null, "Leave without saving drops it");
+    await page.goto(`${base}/lesson/${discardLesson.id}`);
+    await page.getByRole("heading", { name: discardData.challenges[0].prompt }).waitFor({ timeout: 20_000 });
+    check((await db.lessonProgress.count({ where: { userId: MOCK_USER, lessonId: discardLesson.id } })) === 0, "and a later visit sends nothing");
 
     // --- expired session mid-lesson: redirect, keep, resubmit once after sign-in
     const thirdLesson = await json<{ challenges: Challenge[] }>(`/api/lessons/${third.id}`);

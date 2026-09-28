@@ -29,6 +29,9 @@ export type UnsavedKind = "lesson" | "review";
 export interface UnsavedSource {
   kind: UnsavedKind;
   hasUnsavedWork(): boolean;
+  /** Drops what the page kept of its unsaved work for later (the learner chose to leave
+   *  without saving), so it is not sent on a later visit (Codex WW-P5-R6-002). */
+  discard?(): void;
 }
 
 interface EventTargetLike {
@@ -42,6 +45,8 @@ export interface LeaveGuard {
   hasUnsavedWork(): boolean;
   /** What is unsaved, for the dialog's wording; null when nothing is. */
   unsavedKind(): UnsavedKind | null;
+  /** "Leave without saving": the registered page drops whatever it kept for later. */
+  discard(): void;
   /** Re-reads the predicate and arms or disarms `beforeunload` to match. */
   refresh(): void;
   isArmed(): boolean;
@@ -200,6 +205,7 @@ export function createLeaveGuard(o: {
       };
     },
     hasUnsavedWork,
+    discard: () => source?.discard?.(),
     unsavedKind,
     refresh,
     isArmed: () => armed,

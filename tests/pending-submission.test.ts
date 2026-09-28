@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   belongsTo,
   clearPending,
+  clearPendingFor,
   hasPendingFor,
+  keepPending,
   peekPending,
   PENDING_KEY,
   savePending,
@@ -83,5 +85,44 @@ describe("pending submission (work order criterion 21)", () => {
     s.setItem(PENDING_KEY, "{not json");
     expect(peekPending(s, "/lesson/L1")).toBeNull();
     expect(hasPendingFor(s, "/lesson/L1")).toBe(false);
+  });
+});
+
+describe("an ordinary quiz's own copy (WW-P5-R5-003, WW-P5-R6-001)", () => {
+  const quiz = (path: string, submissionId: string): PendingSubmission => ({ ...p, path, body: { ...(p.body as object), submissionId } });
+  const a = quiz("/lesson/A", "id-a");
+  const b = quiz("/lesson/B", "id-b");
+
+  it("is kept when nothing else waits, and again on a retry of the same quiz", () => {
+    const s = new Mem();
+    expect(keepPending(s, a)).toBe(true);
+    expect(keepPending(s, { ...a, accuracy: 0.5 })).toBe(true);
+    expect(peekPending(s, "/lesson/A")).toEqual({ ...a, accuracy: 0.5 });
+  });
+
+  it("never overwrites another quiz's kept submission", () => {
+    const s = new Mem();
+    savePending(s, a);
+    expect(keepPending(s, b)).toBe(false);
+    expect(keepPending(s, quiz("/lesson/A", "id-other"))).toBe(false);
+    expect(peekPending(s, "/lesson/A")).toEqual(a);
+  });
+
+  it("is cleared only when the stored one is this very quiz", () => {
+    const s = new Mem();
+    savePending(s, a);
+    clearPendingFor(s, b);
+    clearPendingFor(s, quiz("/lesson/A", "id-other"));
+    expect(peekPending(s, "/lesson/A")).toEqual(a);
+    clearPendingFor(s, a);
+    expect(s.getItem(PENDING_KEY)).toBeNull();
+  });
+
+  it("a body without an id never matches (nothing is overwritten or cleared)", () => {
+    const s = new Mem();
+    savePending(s, p);
+    expect(keepPending(s, p)).toBe(false);
+    clearPendingFor(s, p);
+    expect(peekPending(s, p.path)).toEqual(p);
   });
 });

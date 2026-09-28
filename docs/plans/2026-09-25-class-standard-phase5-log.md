@@ -372,3 +372,32 @@ All three accepted and fixed on `master` (after the Home Room commits):
 
 Proof: `npm run verify` PASS (19 files / 159 tests, lock and grading checks); `npm run e2e`
 ALL E2E CHECKS PASSED (154 checks).
+
+## Targeted re-check of fix round 5 — Codex (REVISE, 2 medium regressions)
+
+Runner result `claudex-runs/claudex-0qb_8e6n/result.json`, fresh session
+`01a0e974-9c7b-77d1-9bda-72daad8530eb`, base `718ccf6`, tree `1a119dc`, scope limited by a
+host brief to the three findings and what the fix touches; CLI default (`gpt-6-astra` /
+`high`); usage 1,142,720 input (1,015,808 cached), 3,871 output; 170 s. "The three
+reported scenarios are addressed" (R5-001..003 closed), but keeping every completion
+introduced two lifecycle defects, both accepted:
+
+- **WW-P5-R6-001** the single sessionStorage key: a later quiz's keep-then-clear erased
+  another route's kept submission (e.g. a failed recovery of A, then B completes).
+  *Fixed:* `keepPending` never overwrites a different quiz's submission (route +
+  submissionId); `clearPendingFor` clears only the same quiz. The quiz uses both.
+- **WW-P5-R6-002** "Leave without saving" after a failed send left the kept copy, so a
+  later visit sent the answers the dialog said were lost. *Fixed:* `UnsavedSource.discard`
+  / `leaveGuard.discard()`, called only by the dialog's Leave without saving; the quiz
+  registers one that clears its own kept submission. Reloads, sign-in redirects and the
+  browser's own prompt still keep it.
+
+Also from its limitations: the fix-round-5 HUD e2e step reloads the page ("Back to the
+path" is a full navigation to a new document), so it does not isolate the same-page
+rule. Relabelled to what it proves; the rule itself is unit-tested. At `master` the quiz
+page shows no HUD, so R5-001 was not user-visible on the quiz page itself.
+
+Tests: unit (`tests/pending-submission.test.ts` +4, `tests/leave-guard.test.ts` +1);
+e2e "a later quiz never overwrites a kept one" and "Leave without saving drops the copy
+kept for a resend". Proof: `npm run verify` PASS (19 files / 164 tests); `npm run e2e`
+ALL E2E CHECKS PASSED (160 checks).

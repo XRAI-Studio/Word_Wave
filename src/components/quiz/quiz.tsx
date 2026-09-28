@@ -13,7 +13,7 @@ import { Translate } from "@/components/quiz/translate";
 import { useKit } from "@/components/kit-provider";
 import { RedirectingError } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
-import { clearPending, savePending, type PendingSubmission } from "@/lib/pending-submission";
+import { clearPendingFor, keepPending, type PendingSubmission } from "@/lib/pending-submission";
 import { reloadForAccountChange } from "@/lib/account-change";
 import { leaveGuard } from "@/lib/leave-guard";
 import { CompletionError, hudTotalsAfter, postCompletion } from "@/lib/submit-completion";
@@ -76,8 +76,18 @@ export function Quiz({
   // reads the truth at once (a Home Room press re-checks right after a save settles).
   const answeredRef = useRef(false);
   const savedRef = useRef(false);
+  // The finished quiz last handed to `submit`, so "Leave without saving" can drop the
+  // copy kept for a resend (WW-P5-R6-002).
+  const sentRef = useRef<PendingSubmission | null>(null);
   useEffect(
-    () => leaveGuard.register({ kind: mode, hasUnsavedWork: () => answeredRef.current && !savedRef.current }),
+    () =>
+      leaveGuard.register({
+        kind: mode,
+        hasUnsavedWork: () => answeredRef.current && !savedRef.current,
+        discard: () => {
+          if (sentRef.current) clearPendingFor(window.sessionStorage, sentRef.current);
+        },
+      }),
     [mode]
   );
   const resetTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -149,10 +159,12 @@ export function Quiz({
     // Kept before the first send, until it is answered (WW-P5-R5-003): a reload while it
     // is in flight, polling or failed finds it, and PendingRecovery sends it again under
     // the same submission id, which recovers the outcome instead of losing the quiz.
-    savePending(window.sessionStorage, p);
+    // Another quiz's kept submission is never overwritten (WW-P5-R6-001).
+    sentRef.current = p;
+    keepPending(window.sessionStorage, p);
     try {
       const data = await postCompletion(p);
-      clearPending(window.sessionStorage, p.path);
+      clearPendingFor(window.sessionStorage, p);
       savedRef.current = true;
       leaveGuard.refresh();
       setSigningIn(false);
@@ -176,7 +188,7 @@ export function Quiz({
       }
       // Someone else is signed in now: these answers are not theirs (WW-P5-R3-002).
       if (err instanceof CompletionError && err.code === "user-mismatch") {
-        clearPending(window.sessionStorage, p.path);
+        clearPendingFor(window.sessionStorage, p);
         reloadForAccountChange();
         return;
       }
