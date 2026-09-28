@@ -41,16 +41,18 @@ export async function POST(req: Request) {
   const results = parsed.data.results.filter((r) => owned.has(r.wordId));
 
   const outcome = await completeReview(user.id, results, parsed.data.submissionId);
+  const portal = portalFor();
+  const who = { token, userId: user.id };
   if (outcome.duplicate) {
     if (outcome.pending) return NextResponse.json({ duplicate: true, pending: true }, { status: 202 });
-    return NextResponse.json({ duplicate: true, award: outcome.recorded });
+    // The recorded outcome, plus the learner's current totals for the HUD (WW-P5-R5-001).
+    const totals = await portal.currentTotals(who);
+    return NextResponse.json({ duplicate: true, award: outcome.recorded, totals });
   }
   const { applied } = outcome;
 
   // One `review_session` award per session, not per word (seed: 10 XP, 5 a day), and
   // only when the SRS scheduled something (WW-INSPECT-001).
-  const portal = portalFor();
-  const who = { token, userId: user.id };
   let award: AwardOutcome = SKIPPED;
   if (shouldAwardReview(applied)) {
     award = awardOutcome(await portal.award(who, "review_session", { words: applied, course: course.code }));

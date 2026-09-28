@@ -1,4 +1,4 @@
-import type { KitAwardResult } from "@/lib/kit";
+import type { KitAwardResult, KitTotals } from "@/lib/kit";
 import { isMockSession, type SessionEnv } from "@/lib/auth-env";
 
 /**
@@ -33,6 +33,8 @@ export interface PortalClient {
   award(who: Learner, event: XpEvent, detail: Record<string, unknown>): Promise<KitAwardResult | null>;
   unlock(who: Learner, achievement: string): Promise<KitAwardResult | null>;
   saveSummary(who: Learner, state: { rev: number }, summary: LauncherSummary): Promise<boolean | null>;
+  /** The learner's totals now (the kit's own `reward_totals` read), for a repeat's HUD. */
+  currentTotals(who: Learner): Promise<KitTotals | null>;
 }
 
 export interface PortalClientOptions {
@@ -48,20 +50,19 @@ export function createPortalClient(o: PortalClientOptions): PortalClient {
   const timeoutMs = o.timeoutMs ?? 5000;
   const log = o.log ?? ((m: string) => console.error(m));
 
-  async function rpc<T>(who: Learner, name: string, body: unknown): Promise<T | null> {
+  async function request<T>(who: Learner, name: string, path: string, init: RequestInit): Promise<T | null> {
     if (!who.token) {
       log(`portal ${name}: no access token`);
       return null;
     }
     try {
-      const res = await doFetch(`${o.supabaseUrl}/rest/v1/rpc/${name}`, {
-        method: "POST",
+      const res = await doFetch(`${o.supabaseUrl}${path}`, {
+        ...init,
         headers: {
           apikey: o.anonKey,
           Authorization: `Bearer ${who.token}`,
-          "Content-Type": "application/json",
+          ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
         },
-        body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!res.ok) {
@@ -75,11 +76,24 @@ export function createPortalClient(o: PortalClientOptions): PortalClient {
     }
   }
 
+  const rpc = <T>(who: Learner, name: string, body: unknown) =>
+    request<T>(who, name, `/rest/v1/rpc/${name}`, { method: "POST", body: JSON.stringify(body) });
+
   return {
     award: (who, event, detail) => rpc<KitAwardResult>(who, "award", { p_game: GAME, p_event: event, p_detail: detail }),
     unlock: (who, achievement) => rpc<KitAwardResult>(who, "unlock", { p_achievement: achievement }),
     saveSummary: (who, state, summary) =>
       rpc<boolean>(who, "save_progress", { p_game: GAME, p_state: state, p_summary: summary, p_rev: state.rev }),
+    async currentTotals(who) {
+      const rows = await request<KitTotals[]>(
+        who,
+        "reward_totals",
+        `/rest/v1/reward_totals?select=xp,gems,level,streak&user_id=eq.${encodeURIComponent(who.userId)}`,
+        { method: "GET" }
+      );
+      const t = rows?.[0];
+      return t && typeof t.xp === "number" ? { xp: t.xp, gems: t.gems, level: t.level, streak: t.streak } : null;
+    },
   };
 }
 
@@ -157,6 +171,10 @@ export function createMockPortal(): MockPortal {
       const t = get(userId);
       return { xp: t.xp, gems: t.gems, level: t.level, streak: t.streak };
     },
+    async currentTotals(who) {
+      const t = get(who.userId);
+      return { xp: t.xp, gems: t.gems, level: t.level, streak: t.streak };
+    },
     summary(userId) {
       return get(userId).summary;
     },
@@ -183,7 +201,7 @@ export function portalFor(env: PortalEnv = process.env): PortalClient {
       console.error("portal: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_ANON_KEY is not set");
       return null;
     };
-    return { award: missing, unlock: missing, saveSummary: missing };
+    return { award: missing, unlock: missing, saveSummary: missing, currentTotals: missing };
   }
   return createPortalClient({ supabaseUrl: env.NEXT_PUBLIC_SUPABASE_URL, anonKey: env.SUPABASE_ANON_KEY });
 }

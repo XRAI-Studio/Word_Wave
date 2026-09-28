@@ -67,16 +67,18 @@ export async function POST(
   // Progress and SRS commit first; the ledger is credited afterwards, and a portal
   // failure leaves the learner's progress in place.
   const applied = await completeLesson(user.id, lessonId, results, submissionId);
+  const portal = portalFor();
+  const who = { token, userId: user.id };
   if (applied.duplicate) {
     // Still in flight: ask again shortly. Otherwise the first send's recorded outcome;
-    // the browser must not apply its (historical) totals to the HUD.
+    // the browser must not apply its (historical) totals to the HUD, so the learner's
+    // current totals come with it (null when the portal did not answer; WW-P5-R5-001).
     if (applied.pending) return NextResponse.json({ duplicate: true, pending: true }, { status: 202 });
-    return NextResponse.json({ duplicate: true, firstCompletion: false, award: applied.recorded });
+    const totals = await portal.currentTotals(who);
+    return NextResponse.json({ duplicate: true, firstCompletion: false, award: applied.recorded, totals });
   }
   const { firstCompletion } = applied;
 
-  const portal = portalFor();
-  const who = { token, userId: user.id };
   let award: AwardOutcome = SKIPPED;
   if (firstCompletion) {
     award = awardOutcome(await portal.award(who, "lesson_complete", { lessonId, course: course.code }));

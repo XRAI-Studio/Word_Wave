@@ -346,4 +346,29 @@ cached), 6,278 output; 248 s. Checked against `master` `ce4bcb2`: all three stil
   202 polling it lives only in memory, so a reload (past the leave prompt) loses the
   answers and the submissionId that would recover the server's outcome.
 
-Disposition: awaiting the user (inspection budget long exceeded; see below).
+Disposition: the user chose to fix all three, then one Codex re-check limited to them.
+
+## Fix round 5 (inspection 5)
+
+All three accepted and fixed on `master` (after the Home Room commits):
+
+- **WW-P5-R5-001** *Fixed:* `PortalClient.currentTotals` reads `reward_totals` with the
+  learner's token (the kit's own read; RLS "own totals"), the mock answers from memory.
+  Both completion routes return `totals` with a repeat (null when the portal did not
+  answer). `hudTotalsAfter` picks a first send's award totals or a repeat's current
+  totals, never a repeat's historical award; the quiz and recovery hydrate the HUD from
+  it (`applyAward` removed from the store). Unit tests (`tests/portal.test.ts`,
+  `tests/submit-completion.test.ts`); e2e "the HUD shows the current totals after a
+  repeat" (a lost response, Continue on the same page, back to the path, no reload).
+- **WW-P5-R5-002** *Fixed:* recovery compares the server's learner with the kit's; if they
+  differ it discards the submission when it is not the server learner's and reloads
+  through `reloadForAccountChange` before any quiz renders. A `user-mismatch` from the
+  resend now discards and reloads too. e2e: the second `/api/user` answers another learner
+  → notice, submission gone, nothing saved.
+- **WW-P5-R5-003** *Fixed:* the quiz stores the submission before the first POST, clears
+  it on a success or a `user-mismatch` (then reloads), and keeps it through a failure or
+  polling, so a reload lets `PendingRecovery` resend it under the same submission id.
+  e2e: a lost response keeps it; a reload shows the recorded outcome with no second award.
+
+Proof: `npm run verify` PASS (19 files / 159 tests, lock and grading checks); `npm run e2e`
+ALL E2E CHECKS PASSED (154 checks).

@@ -1,5 +1,6 @@
 import { apiFetch } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
+import type { KitTotals } from "@/lib/kit";
 import { savePending, type PendingSubmission } from "@/lib/pending-submission";
 
 /** What both completion routes return (work order criterion 16). */
@@ -8,6 +9,18 @@ export interface CompletionResponse {
   duplicate?: boolean;
   firstCompletion?: boolean;
   award: AwardOutcome;
+  /** On a repeat: the learner's totals now (null when the portal did not answer). */
+  totals?: KitTotals | null;
+}
+
+/**
+ * The totals the HUD should show after a completion: a first send's award result, or on
+ * a repeat the current totals read with it, never the repeat's historical award result
+ * (WW-P5-R4-002, WW-P5-R5-001). Null leaves the HUD as it is.
+ */
+export function hudTotalsAfter(data: CompletionResponse): KitTotals | null {
+  if (data.duplicate) return data.totals ?? null;
+  return data.award.result;
 }
 
 /** A completion the server refused, with its `error` code (e.g. `user-mismatch`). */
@@ -22,8 +35,9 @@ export class CompletionError extends Error {
 
 /**
  * POSTs a finished quiz (or a kept one after sign-in). It names the learner who answered
- * (`X-WordWave-Expect-User`), and if the session has expired it keeps the submission for
- * the return trip before the browser leaves for the portal (criterion 21). A 202 (the
+ * (`X-WordWave-Expect-User`). The caller keeps the submission in sessionStorage before
+ * the first send (WW-P5-R5-003); if the session has expired it is kept again here before
+ * the browser leaves for the portal (criterion 21). A 202 (the
  * same quiz still finishing elsewhere) is asked again every `pollMs`. Throws
  * `RedirectingError` in that case, `CompletionError` for a refused request, or the
  * network error.

@@ -13,10 +13,10 @@ import { Translate } from "@/components/quiz/translate";
 import { useKit } from "@/components/kit-provider";
 import { RedirectingError } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
-import type { PendingSubmission } from "@/lib/pending-submission";
+import { clearPending, savePending, type PendingSubmission } from "@/lib/pending-submission";
 import { reloadForAccountChange } from "@/lib/account-change";
 import { leaveGuard } from "@/lib/leave-guard";
-import { CompletionError, postCompletion } from "@/lib/submit-completion";
+import { CompletionError, hudTotalsAfter, postCompletion } from "@/lib/submit-completion";
 import { useGameStore } from "@/lib/store";
 import { normalizeTyped } from "@/lib/course-policy";
 import type { ChallengeDTO } from "@/lib/types";
@@ -49,7 +49,7 @@ export function Quiz({
   const kit = useKit();
   const leave = useGuardedLeave();
   const departing = useDeparting();
-  const applyAward = useGameStore((st) => st.applyAward);
+  const hydrate = useGameStore((st) => st.hydrate);
 
   const [queue, setQueue] = useState(challenges);
   const [idx, setIdx] = useState(0);
@@ -146,13 +146,19 @@ export function Quiz({
   async function submit(p: PendingSubmission) {
     clearTimeout(resetTimer.current);
     setStatus("submitting");
+    // Kept before the first send, until it is answered (WW-P5-R5-003): a reload while it
+    // is in flight, polling or failed finds it, and PendingRecovery sends it again under
+    // the same submission id, which recovers the outcome instead of losing the quiz.
+    savePending(window.sessionStorage, p);
     try {
       const data = await postCompletion(p);
+      clearPending(window.sessionStorage, p.path);
       savedRef.current = true;
       leaveGuard.refresh();
       setSigningIn(false);
-      // A repeat carries the first send's historical totals; the HUD keeps the current ones.
-      if (data.award.result && !data.duplicate) applyAward(data.award.result);
+      // A repeat carries the first send's historical totals; it brings the current ones.
+      const totals = hudTotalsAfter(data);
+      if (totals) hydrate(totals);
       setOutcome({ award: data.award, accuracy: p.accuracy });
       setStatus("done");
     } catch (err) {
@@ -170,6 +176,7 @@ export function Quiz({
       }
       // Someone else is signed in now: these answers are not theirs (WW-P5-R3-002).
       if (err instanceof CompletionError && err.code === "user-mismatch") {
+        clearPending(window.sessionStorage, p.path);
         reloadForAccountChange();
         return;
       }

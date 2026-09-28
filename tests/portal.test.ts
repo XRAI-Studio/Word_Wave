@@ -54,6 +54,26 @@ describe("portal client (work order criterion 13)", () => {
     expect(log).toHaveBeenCalledOnce();
   });
 
+  it("reads the learner's current totals from reward_totals, as the kit does (WW-P5-R5-001)", async () => {
+    const f = vi.fn(async () => ok([{ xp: 70, gems: 5, level: 2, streak: 3 }]));
+    const { c } = client(f as unknown as typeof fetch);
+    await expect(c.currentTotals(who)).resolves.toEqual({ xp: 70, gems: 5, level: 2, streak: 3 });
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://sb.example/rest/v1/reward_totals?select=xp,gems,level,streak&user_id=eq.u1");
+    expect(init.method).toBe("GET");
+    expect(init.body).toBeUndefined();
+    expect(init.headers).toEqual({ apikey: "anon-key", Authorization: "Bearer tok-123" });
+  });
+
+  it.each([
+    ["no row", async () => ok([])],
+    ["a non-2xx answer", async () => new Response("no", { status: 401 })],
+    ["a network error", async () => { throw new TypeError("fetch failed"); }],
+  ])("current totals resolve null on %s", async (_label, impl) => {
+    const { c } = client(vi.fn(impl) as unknown as typeof fetch);
+    await expect(c.currentTotals(who)).resolves.toBeNull();
+  });
+
   it("makes no request without a token", async () => {
     const f = vi.fn();
     const { c } = client(f as unknown as typeof fetch);
@@ -83,6 +103,7 @@ describe("portalFor", () => {
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     const p = portalFor({ NODE_ENV: "production", NEXT_PUBLIC_SUPABASE_URL: "https://sb.example" });
     await expect(p.award(who, "lesson_complete", {})).resolves.toBeNull();
+    await expect(p.currentTotals(who)).resolves.toBeNull();
     err.mockRestore();
   });
 });
@@ -96,6 +117,7 @@ describe("mock portal", () => {
     expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
     expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
     expect(m.totals("u")).toMatchObject({ xp: 50, gems: 5 });
+    await expect(m.currentTotals(w)).resolves.toEqual({ xp: 50, gems: 5, level: 1, streak: 1 });
   });
 
   it("keeps the newest summary: an older rev is refused", async () => {

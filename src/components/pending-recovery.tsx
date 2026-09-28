@@ -5,11 +5,12 @@ import { ChunkyButton } from "@/components/chunky-button";
 import { useKit } from "@/components/kit-provider";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
+import { reloadForAccountChange } from "@/lib/account-change";
 import { leaveGuard } from "@/lib/leave-guard";
 import type { AwardOutcome } from "@/lib/completion";
 import { belongsTo, clearPending, hasPendingFor, peekPending, type PendingSubmission } from "@/lib/pending-submission";
 import { useGameStore } from "@/lib/store";
-import { CompletionError, postCompletion } from "@/lib/submit-completion";
+import { CompletionError, hudTotalsAfter, postCompletion } from "@/lib/submit-completion";
 import type { UserDTO } from "@/lib/types";
 
 type State =
@@ -25,14 +26,17 @@ type State =
  * discarded, so a reload never loses or repeats it:
  * - the server's current learner and active course are fetched first; a lookup failure
  *   keeps the submission and offers a retry, never a discard;
+ * - a server learner other than the one this page's kit started as means the cookie
+ *   changed hands: the page reloads under the new identity (discarding the submission
+ *   if it is not theirs) before any quiz renders under the old one (WW-P5-R5-002);
  * - a different learner or course discards it unsent;
  * - a successful send removes it; a `user-mismatch` refusal (the cookie changed hands
- *   after the check) discards it; any other failure keeps it for Try again, which
- *   repeats the whole check before resending.
+ *   after the check) discards it and reloads; any other failure keeps it for Try again,
+ *   which repeats the whole check before resending.
  */
 export function PendingRecovery({ mode, children }: { mode: "lesson" | "review"; children: React.ReactNode }) {
   const kit = useKit();
-  const applyAward = useGameStore((st) => st.applyAward);
+  const hydrate = useGameStore((st) => st.hydrate);
   // Rendered only on the client, once the kit is ready (inside KitProvider).
   const [state, setState] = useState<State>(() =>
     kit.user && hasPendingFor(window.sessionStorage, window.location.pathname) ? { kind: "checking" } : { kind: "none" }
@@ -51,7 +55,13 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
       if (!(err instanceof RedirectingError)) setState({ kind: "failed" });
       return;
     }
-    if (!belongsTo(pending, { userId: me.id, courseCode: me.activeCourseCode })) {
+    const now = { userId: me.id, courseCode: me.activeCourseCode };
+    if (me.id !== kit.user?.id) {
+      if (!belongsTo(pending, now)) clearPending(storage, path);
+      reloadForAccountChange();
+      return;
+    }
+    if (!belongsTo(pending, now)) {
       clearPending(storage, path);
       setState({ kind: "none" });
       return;
@@ -60,15 +70,16 @@ export function PendingRecovery({ mode, children }: { mode: "lesson" | "review";
     try {
       const data = await postCompletion(pending);
       clearPending(storage, path);
-      // A repeat carries the first send's historical totals; the HUD keeps the current
-      // ones, hydrated fresh when this page loaded (WW-P5-R4-002).
-      if (data.award.result && !data.duplicate) applyAward(data.award.result);
+      // A repeat carries the first send's historical totals; it brings the current ones
+      // (WW-P5-R4-002, WW-P5-R5-001).
+      const totals = hudTotalsAfter(data);
+      if (totals) hydrate(totals);
       setState({ kind: "done", award: data.award, accuracy: pending.accuracy });
     } catch (err) {
       if (err instanceof RedirectingError) return;
       if (err instanceof CompletionError && err.code === "user-mismatch") {
         clearPending(storage, path);
-        setState({ kind: "none" });
+        reloadForAccountChange();
         return;
       }
       setState({ kind: "failed" });
