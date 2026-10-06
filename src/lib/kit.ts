@@ -3,6 +3,12 @@
  * loader, and a mock that ports the real kit's save/flush/queue/init code paths
  * (travelschooling-portal/public/kit/v1/ts-kit.js) so tests exercise the same
  * timing behavior, including the debounce that strands superseded save promises.
+ *
+ * `save()` resolves a `SaveResult` saying where the state ended up: `"server"` (the
+ * server answered, stored or already newer), `"local"` (the network failed and the dirty
+ * cache holds it; the next init flushes it) or `"none"` (both failed: only the page's
+ * memory holds it). It never rejects. `undefined` means an older kit build that reported
+ * nothing; callers must treat it as unknown and fall back to their own checks.
  */
 
 export interface KitTotals {
@@ -29,12 +35,18 @@ export interface KitUser {
   role: string;
 }
 
+/** Where a `save()` left the state; see the header comment. */
+export interface SaveResult {
+  stored: "server" | "local" | "none";
+}
+
 export interface Kit {
   user: KitUser | null;
   totals: KitTotals;
   launcherUrl: string;
   load(): Promise<unknown>;
-  save(state: unknown, summary?: unknown): Promise<void>;
+  /** Resolves the outcome (or `undefined` from an older kit build); never rejects. */
+  save(state: unknown, summary?: unknown): Promise<SaveResult | undefined>;
   award(event: string, detail?: Record<string, unknown>): Promise<KitAwardResult>;
   unlock(id: string): Promise<unknown>;
   toast(text: string): void;
@@ -98,6 +110,8 @@ export class MemoryTransport implements MockTransport {
   progress: ProgressRow | null = null;
   totals: KitTotals = { xp: 0, gems: 0, level: 1, streak: 0 };
   failNextUpsert = false;
+  /** While set, every `saveProgress` rejects (persistent; `failNextUpsert` is one-shot). */
+  failUpserts = false;
   upsertDelayMs = 0;
   failRpc = false;
   unknownEvents = new Set<string>();
@@ -137,6 +151,7 @@ export class MemoryTransport implements MockTransport {
 
   async saveProgress(args: SaveProgressArgs): Promise<boolean> {
     if (this.upsertDelayMs > 0) await new Promise((r) => setTimeout(r, this.upsertDelayMs));
+    if (this.failUpserts) throw new Error("network");
     if (this.failNextUpsert) {
       this.failNextUpsert = false;
       throw new Error("network");
@@ -198,19 +213,24 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
   const cacheKey = `tskit:${o.game}:${uid}`;
   const queueKey = `${cacheKey}:queue`;
 
+  /** Read: the parsed value, or null. Write: true when stored, false when `setItem` threw. */
   function ls(key: string): unknown;
-  function ls(key: string, val: unknown): void;
+  function ls(key: string, val: unknown): boolean;
   function ls(key: string, val?: unknown): unknown {
-    try {
-      if (val === undefined) {
+    if (val === undefined) {
+      try {
         const v = storage.getItem(key);
         return v ? JSON.parse(v) : null;
+      } catch {
+        return null;
       }
-      storage.setItem(key, JSON.stringify(val));
-    } catch {
-      return null;
     }
-    return undefined;
+    try {
+      storage.setItem(key, JSON.stringify(val));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   const kit: Kit = {
@@ -253,8 +273,9 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let pending: { state: unknown; summary: unknown } | null = null;
-  function flush(): Promise<void> {
-    if (!pending) return Promise.resolve();
+  /** Resolves where the pending state ended up, or null when nothing was pending (only init can hit that). */
+  function flush(): Promise<SaveResult | null> {
+    if (!pending) return Promise.resolve(null);
     const p = pending;
     pending = null;
     // Mirrors the real kit: save_progress drops a save whose rev is older than the stored
@@ -262,20 +283,34 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
     // holds something newer. Only a rejection (network) leaves the cache dirty.
     return transport
       .saveProgress({ state: p.state, summary: p.summary, rev: revOf(p.state) })
-      .then(() => {
-        ls(cacheKey, { state: p.state, summary: p.summary });
+      .then((): SaveResult => {
+        // The cache must not keep an older dirty snapshot: init replays a dirty cache, and a
+        // state without a rev (p_rev 0) would overwrite this acknowledged one (KSO-004). So
+        // when the clean write throws, the entry is removed. If removal throws too (storage
+        // refusing every operation) a stale entry remains; nothing more can be done here.
+        if (!ls(cacheKey, { state: p.state, summary: p.summary })) {
+          try {
+            storage.removeItem(cacheKey);
+          } catch {
+            // accepted: see above
+          }
+        }
+        return { stored: "server" };
       })
-      .catch(() => {
-        ls(cacheKey, { state: p.state, summary: p.summary, dirty: true });
-      });
+      .catch((): SaveResult => ({ stored: ls(cacheKey, { state: p.state, summary: p.summary, dirty: true }) ? "local" : "none" }));
   }
   kit.save = (state, summary) => {
     pending = { state, summary: summary ?? {} };
     ls(cacheKey, { state, summary: summary ?? {}, dirty: true });
     if (saveTimer) clearTimeout(saveTimer); // the earlier promise is never settled, exactly like the real kit
-    return new Promise<void>((resolve) => {
+    return new Promise<SaveResult | undefined>((resolve) => {
       saveTimer = setTimeout(() => {
-        flush().then(resolve, resolve);
+        // `pending` is always set when this timer fires, so flush never answers null here.
+        // An unexpected throw still settles the promise, as "none".
+        flush().then(
+          (r) => resolve(r ?? undefined),
+          () => resolve({ stored: "none" }),
+        );
       }, 300);
     });
   };
@@ -316,6 +351,8 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
 declare global {
   interface Window {
     TSKit?: { init(options: { game: string }): Promise<Kit>; version: number };
+    /** The dev kit's transport, so mock-mode e2e can switch saves off and on. Set only by `loadDevKit`. */
+    __tsMockTransport?: MemoryTransport;
   }
 }
 
@@ -372,6 +409,9 @@ export async function loadRealKit(game: string): Promise<Kit> {
 /** Dev-mode kit backed by localStorage so saves survive reloads on localhost. */
 export async function loadDevKit(game: string): Promise<Kit> {
   const storage: StorageLike = typeof window !== "undefined" ? window.localStorage : new MemoryStorage();
-  const transport = new MemoryTransport({ storage, key: `factors:mock:${game}` });
+  const transport = new MemoryTransport({ storage, key: `wordwave:mock:${game}` });
+  // Reachable only where shouldUseMockKit() is true (localhost, or the env flag outside
+  // production builds), never on a deployed class (KSO-005).
+  if (typeof window !== "undefined") window.__tsMockTransport = transport;
   return createMockKit({ game, userId: "mock-user", displayName: "Dev Learner", storage, transport });
 }
