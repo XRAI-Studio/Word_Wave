@@ -16,7 +16,7 @@ Rules:
   `requireActiveCourse` from `src/lib/auth.ts` before anything else
   (`tests/api-routes-auth.test.ts` enforces it).
 - `src/proxy.ts`, `src/lib/session.ts`, `src/lib/session-cookie.ts` stay byte-identical to
-  Word Power's; `src/lib/kit.ts` stays byte-identical to Factors'.
+  Word Power's; `src/lib/kit.ts` stays identical to Factors' except its dev transport key (`wordwave:mock:`).
 - XP is awarded only on the server, with the learner's token, after progress is committed,
   and only with events in the portal's `supabase/seed.sql` (`lesson_complete`,
   `review_session`, achievement `wordwave-first-lesson`). Never the service role.

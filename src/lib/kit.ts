@@ -296,8 +296,7 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
           }
         }
         return { stored: "server" };
-      })
-      .catch((): SaveResult => ({ stored: ls(cacheKey, { state: p.state, summary: p.summary, dirty: true }) ? "local" : "none" }));
+      }, (): SaveResult => ({ stored: ls(cacheKey, { state: p.state, summary: p.summary, dirty: true }) ? "local" : "none" }));
   }
   kit.save = (state, summary) => {
     pending = { state, summary: summary ?? {} };
@@ -306,11 +305,14 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
     return new Promise<SaveResult | undefined>((resolve) => {
       saveTimer = setTimeout(() => {
         // `pending` is always set when this timer fires, so flush never answers null here.
-        // An unexpected throw still settles the promise, as "none".
-        flush().then(
-          (r) => resolve(r ?? undefined),
-          () => resolve({ stored: "none" }),
-        );
+        // flush runs inside a continuation, as in the real kit, so even a synchronous throw
+        // settles the promise, as "none".
+        Promise.resolve()
+          .then(flush)
+          .then(
+            (r) => resolve(r ?? undefined),
+            () => resolve({ stored: "none" }),
+          );
       }, 300);
     });
   };
