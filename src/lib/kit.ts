@@ -286,13 +286,18 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
       .then((): SaveResult => {
         // The cache must not keep an older dirty snapshot: init replays a dirty cache, and a
         // state without a rev (p_rev 0) would overwrite this acknowledged one (KSO-004). So
-        // when the clean write throws, the entry is removed. If removal throws too (storage
+        // when the clean write throws and the entry holds a different state, it is removed. An
+        // entry holding this very state stays: it is the only local copy if a later progress
+        // read fails, and replaying it is harmless (KSO-F02). If removal throws too (storage
         // refusing every operation) a stale entry remains; nothing more can be done here.
         if (!ls(cacheKey, { state: p.state, summary: p.summary })) {
-          try {
-            storage.removeItem(cacheKey);
-          } catch {
-            // accepted: see above
+          const cur = ls(cacheKey) as CacheEntry | null;
+          if (!cur || JSON.stringify(cur.state) !== JSON.stringify(p.state)) {
+            try {
+              storage.removeItem(cacheKey);
+            } catch {
+              // accepted: see above
+            }
           }
         }
         return { stored: "server" };
