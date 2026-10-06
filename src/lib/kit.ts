@@ -9,7 +9,25 @@
  * cache holds it; the next init flushes it) or `"none"` (both failed: only the page's
  * memory holds it). It never rejects. `undefined` means an older kit build that reported
  * nothing; callers must treat it as unknown and fall back to their own checks.
+ *
+ * `load({ strict: true })` rejects with an error whose `code` is `"progress-unavailable"`
+ * (`isProgressUnavailable(err)`) when the progress read fails, whatever the local cache
+ * holds; a strict caller builds no state and writes nothing from it, and retries later.
+ * Without the option a failed read resolves the cached state, else `{}`, as before. The
+ * successful-read path is the same either way. An older kit ignores the option.
  */
+
+/** The `code` of the error a strict `load()` rejects with when the progress read failed. */
+export const PROGRESS_UNAVAILABLE = "progress-unavailable";
+
+/** True for the rejection of `kit.load({ strict: true })` whose progress read failed. */
+export function isProgressUnavailable(err: unknown): boolean {
+  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === PROGRESS_UNAVAILABLE;
+}
+
+function progressUnavailable(): Error {
+  return Object.assign(new Error("progress unavailable"), { code: PROGRESS_UNAVAILABLE });
+}
 
 export interface KitTotals {
   xp: number;
@@ -44,7 +62,8 @@ export interface Kit {
   user: KitUser | null;
   totals: KitTotals;
   launcherUrl: string;
-  load(): Promise<unknown>;
+  /** With `{ strict: true }` a failed read rejects (`isProgressUnavailable`); see the header comment. */
+  load(options?: { strict?: boolean }): Promise<unknown>;
   /** Resolves the outcome (or `undefined` from an older kit build); never rejects. */
   save(state: unknown, summary?: unknown): Promise<SaveResult | undefined>;
   award(event: string, detail?: Record<string, unknown>): Promise<KitAwardResult>;
@@ -103,6 +122,15 @@ export interface MockTransport {
   getTotals(): Promise<KitTotals | null>;
 }
 
+/**
+ * Failure switches shared by every transport that holds it, so a test or the e2e can turn
+ * reads or saves off before the page loads and keep them off across a retry's new kit.
+ */
+export interface MockControl {
+  failReads?: boolean;
+  failUpserts?: boolean;
+}
+
 const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
 
 /** In-memory transport with knobs for failure and latency; also used by the dev-mode kit. */
@@ -112,6 +140,10 @@ export class MemoryTransport implements MockTransport {
   failNextUpsert = false;
   /** While set, every `saveProgress` rejects (persistent; `failNextUpsert` is one-shot). */
   failUpserts = false;
+  /** While set, every `getProgress` rejects (persistent), like a failed progress read. */
+  failReads = false;
+  /** Optional shared switches, consulted on every call in addition to this transport's own flags. */
+  control?: MockControl;
   upsertDelayMs = 0;
   failRpc = false;
   unknownEvents = new Set<string>();
@@ -119,7 +151,8 @@ export class MemoryTransport implements MockTransport {
   private persist?: StorageLike;
   private persistKey?: string;
 
-  constructor(persist?: { storage: StorageLike; key: string }) {
+  constructor(persist?: { storage: StorageLike; key: string }, control?: MockControl) {
+    this.control = control;
     if (persist) {
       this.persist = persist.storage;
       this.persistKey = persist.key;
@@ -146,12 +179,13 @@ export class MemoryTransport implements MockTransport {
   }
 
   async getProgress() {
+    if (this.failReads || this.control?.failReads) throw new Error("network");
     return this.progress ? clone(this.progress) : null;
   }
 
   async saveProgress(args: SaveProgressArgs): Promise<boolean> {
     if (this.upsertDelayMs > 0) await new Promise((r) => setTimeout(r, this.upsertDelayMs));
-    if (this.failUpserts) throw new Error("network");
+    if (this.failUpserts || this.control?.failUpserts) throw new Error("network");
     if (this.failNextUpsert) {
       this.failNextUpsert = false;
       throw new Error("network");
@@ -254,7 +288,7 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
     });
   }
 
-  kit.load = () =>
+  kit.load = (options) =>
     transport
       .getProgress()
       .then((server) => {
@@ -267,6 +301,8 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
         return local ? local.state : {};
       })
       .catch(() => {
+        // Strict: a failed read is "not ready", never the cache or {} (a guess).
+        if (options?.strict) throw progressUnavailable();
         const local = ls(cacheKey) as CacheEntry | null;
         return local ? local.state : {};
       });
@@ -355,6 +391,11 @@ declare global {
     TSKit?: { init(options: { game: string }): Promise<Kit>; version: number };
     /** The dev kit's transport, so mock-mode e2e can switch saves off and on. Set only by `loadDevKit`. */
     __tsMockTransport?: MemoryTransport;
+    /**
+     * Shared failure switches every dev-kit transport consults. An e2e init script may set
+     * it before the page loads (`{ failReads: true }`); `loadDevKit` creates it empty if absent.
+     */
+    __tsMockControl?: MockControl;
   }
 }
 
@@ -411,9 +452,11 @@ export async function loadRealKit(game: string): Promise<Kit> {
 /** Dev-mode kit backed by localStorage so saves survive reloads on localhost. */
 export async function loadDevKit(game: string): Promise<Kit> {
   const storage: StorageLike = typeof window !== "undefined" ? window.localStorage : new MemoryStorage();
-  const transport = new MemoryTransport({ storage, key: `wordwave:mock:${game}` });
   // Reachable only where shouldUseMockKit() is true (localhost, or the env flag outside
   // production builds), never on a deployed class (KSO-005).
+  let control: MockControl | undefined;
+  if (typeof window !== "undefined") control = window.__tsMockControl ??= {};
+  const transport = new MemoryTransport({ storage, key: `wordwave:mock:${game}` }, control);
   if (typeof window !== "undefined") window.__tsMockTransport = transport;
   return createMockKit({ game, userId: "mock-user", displayName: "Dev Learner", storage, transport });
 }
