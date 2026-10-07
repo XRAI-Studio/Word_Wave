@@ -114,10 +114,10 @@ describe("mock portal", () => {
     const w = { token: null, userId: "u" };
     for (let i = 0; i < 5; i++) expect((await m.award(w, "review_session", {}))!.awarded_xp).toBe(10);
     expect((await m.award(w, "review_session", {}))!.awarded_xp).toBe(0);
-    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
-    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
-    expect(m.totals("u")).toMatchObject({ xp: 50, gems: 5 });
-    await expect(m.currentTotals(w)).resolves.toEqual({ xp: 50, gems: 5, level: 1, streak: 1 });
+    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(25);
+    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(25);
+    expect(m.totals("u")).toMatchObject({ xp: 50, gems: 25 });
+    await expect(m.currentTotals(w)).resolves.toEqual({ xp: 50, gems: 25, level: 1, streak: 1 });
   });
 
   it("keeps the newest summary: an older rev is refused", async () => {

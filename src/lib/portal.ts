@@ -109,7 +109,7 @@ interface MockTotals {
 
 /** Per-event daily allowance, as seeded (`per_day`). */
 const PER_DAY: Record<XpEvent, number> = { lesson_complete: 20, review_session: 5 };
-const ACHIEVEMENT_GEMS: Record<string, number> = { [FIRST_LESSON_ACHIEVEMENT]: 5 };
+const ACHIEVEMENT_GEMS: Record<string, number> = { [FIRST_LESSON_ACHIEVEMENT]: 25 };
 
 export interface MockPortal extends PortalClient {
   totals(userId: string): { xp: number; gems: number; level: number; streak: number };
