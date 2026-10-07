@@ -408,7 +408,8 @@ async function learnerFlowInDevMode() {
     await page.getByRole("button", { name: "Back to the path" }).click();
     await page.waitForURL("**/learn");
     check((await hudXp(page)) === 10, "HUD shows 10 XP after returning to the path");
-    check((await hudGems(page)) === 25, "HUD shows the first-lesson achievement's 25 gems without a reload");
+    // The award pays the lesson's 3 gems first; the unlock's totals then add the achievement's 25.
+    check((await hudGems(page)) === 28, "HUD shows the lesson's 3 gems and the first-lesson achievement's 25 without a reload");
     await page.reload();
     check((await hudXp(page)) === 10, "HUD still shows 10 XP after a reload");
 
