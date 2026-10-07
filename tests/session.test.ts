@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { createLocalJWKSet, exportJWK, generateKeyPair, SignJWT, type JWTVerifyGetKey } from "jose";
 import { extractAccessToken, verifySession } from "@/lib/session";
-import { sessionUserId } from "@/lib/session-cookie";
+import { projectRef, sessionUserId } from "@/lib/session-cookie";
 
 const ISSUER = "https://example.supabase.co/auth/v1";
 let privateKey: Awaited<ReturnType<typeof generateKeyPair>>["privateKey"];
@@ -45,6 +45,36 @@ describe("extractAccessToken", () => {
     expect(extractAccessToken("foo=bar")).toBeNull();
     expect(extractAccessToken("sb-abc-auth-token=not-json")).toBeNull();
   });
+  it("reads two projects' cookies separately, never gluing them together", () => {
+    const b64 = "base64-" + Buffer.from(JSON.stringify({ access_token: "CHUNKED" })).toString("base64url");
+    const cut = Math.floor(b64.length / 2);
+    const header =
+      `sb-zzz-auth-token.1=${b64.slice(cut)}; ` +
+      "sb-aaa-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "PLAIN" })) +
+      `; sb-zzz-auth-token.0=${b64.slice(0, cut)}`;
+    expect(extractAccessToken(header)).toBe("PLAIN");
+    expect(extractAccessToken(header, "zzz")).toBe("CHUNKED");
+  });
+  it("tries the configured project's cookie first", () => {
+    const header =
+      "sb-aaa-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "OTHER" })) +
+      "; sb-mine-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "MINE" }));
+    expect(extractAccessToken(header, "mine")).toBe("MINE");
+    expect(extractAccessToken(header)).toBe("OTHER");
+  });
+  it("does not let a broken cookie hide a good one", () => {
+    const good = "sb-good-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "GOOD" }));
+    expect(extractAccessToken(`sb-bad-auth-token=not-json; ${good}`, "bad")).toBe("GOOD");
+    expect(extractAccessToken(`sb-aaa-auth-token=%E0%A4%A; ${good}`)).toBe("GOOD");
+  });
+});
+
+describe("projectRef", () => {
+  it("is the first label of the Supabase URL's host, as @supabase/ssr names its cookie", () => {
+    expect(projectRef("https://qywcmcgxgitovswbzets.supabase.co")).toBe("qywcmcgxgitovswbzets");
+    expect(projectRef(undefined)).toBeUndefined();
+    expect(projectRef("not a url")).toBeUndefined();
+  });
 });
 
 describe("sessionUserId (client-side identity check, no verification)", () => {
@@ -78,6 +108,12 @@ describe("verifySession", () => {
   it("rejects a token without a subject", async () => {
     const result = await verifySession(cookie(await token({}, { sub: null })), { jwks, issuer: ISSUER });
     expect(result).toEqual({ ok: false, reason: "invalid" });
+  });
+  it("verifies the configured project's cookie when another project's sorts first", async () => {
+    const other = "sb-aaa-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "not.a.jwt" }));
+    const mine = "sb-example-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: await token() }));
+    const env = { NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co" };
+    expect(await verifySession(`${other}; ${mine}`, { jwks, issuer: ISSUER, env })).toMatchObject({ ok: true, sub: "user-1" });
   });
   it("reports a missing cookie", async () => {
     expect(await verifySession(null, { jwks, issuer: ISSUER })).toEqual({ ok: false, reason: "missing" });

@@ -35,6 +35,13 @@ describe("readSession", () => {
     expect(verify).toHaveBeenCalledWith(cookie, { env: PROD });
   });
 
+  it("returns the configured project's token when another project's cookie is present", async () => {
+    const other = "sb-aaa-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "jwt-other" }));
+    const mine = "sb-sb-auth-token=" + encodeURIComponent(JSON.stringify({ access_token: "jwt-mine" }));
+    const { token } = await readSession(`${other}; ${mine}`, PROD, vi.fn(async () => okSession));
+    expect(token).toBe("jwt-mine");
+  });
+
   it("has no token in the mock session", async () => {
     const { token } = await readSession(null, DEV, vi.fn(async () => okSession));
     expect(token).toBeNull();
