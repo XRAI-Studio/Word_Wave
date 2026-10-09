@@ -121,7 +121,9 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    /* Opaque ring: at 50% the light focus outline was ~2.2:1 on the nav surfaces; brand-ink
+       is 5.3:1 or more on paper and surface in both themes (Codex WW-THEME-001). */
+    @apply border-border outline-ring;
   }
   body {
     @apply bg-background text-foreground;
