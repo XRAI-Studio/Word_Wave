@@ -76,12 +76,12 @@ export function MatchPairs({
           }
         }}
         className={cn(
-          "rounded-2xl border-b-4 px-3 py-3 font-semibold transition-colors w-full",
+          "rounded-2xl border-2 border-b-4 px-3 py-3 font-semibold transition-colors w-full",
           "focus-visible:outline-2 focus-visible:outline-brand-ink",
           isLocked && "bg-verde-soft border-verde text-verde-ink pointer-events-none",
           isFlashing && "bg-heart-soft border-heart text-heart-ink",
           !isLocked && !isFlashing && isPicked && "bg-brand-soft border-brand-ink text-brand-ink",
-          !isLocked && !isFlashing && !isPicked && "bg-surface border-line hover:bg-paper"
+          !isLocked && !isFlashing && !isPicked && "bg-surface border-line-strong hover:bg-paper"
         )}
       >
         {label}

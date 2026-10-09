@@ -3,12 +3,13 @@
 import { cn } from "@/lib/utils";
 
 // The game's primary control: a chunky tile with a solid bottom edge that
-// depresses on press. Color variants map to game semantics.
+// depresses on press. Color variants map to game semantics. Hover darkens (never
+// brightens), so white labels keep at least 4.5:1 on the fills in every state.
 const variants = {
-  primary: "bg-brand text-white border-brand-deep hover:brightness-105",
-  success: "bg-verde text-white border-verde-deep hover:brightness-105",
-  danger: "bg-heart text-white border-heart-deep hover:brightness-105",
-  saffron: "bg-saffron text-on-saffron border-saffron-deep hover:brightness-105",
+  primary: "bg-brand text-white border-brand-deep hover:brightness-95",
+  success: "bg-verde text-white border-verde-deep hover:brightness-95",
+  danger: "bg-heart text-white border-heart-deep hover:brightness-95",
+  saffron: "bg-saffron text-on-saffron border-saffron-deep hover:brightness-95",
   outline: "bg-surface text-ink border-line hover:bg-paper",
   selected: "bg-brand-soft text-brand-ink border-brand-ink",
 } as const;

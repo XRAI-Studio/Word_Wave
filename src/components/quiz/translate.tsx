@@ -34,7 +34,7 @@ export function Translate({
             disabled={disabled}
             onClick={() => onChange(value.filter((v) => v !== bankIdx))}
             aria-label={`Remove "${meta.wordBank[bankIdx]}"`}
-            className="min-h-11 min-w-11 rounded-xl border-b-4 border-line bg-surface px-3 py-2 font-semibold hover:bg-paper focus-visible:outline-2 focus-visible:outline-brand-ink"
+            className="min-h-11 min-w-11 rounded-xl border-2 border-b-4 border-line-strong bg-surface px-3 py-2 font-semibold hover:bg-paper focus-visible:outline-2 focus-visible:outline-brand-ink"
           >
             {meta.wordBank[bankIdx]}
           </button>
@@ -50,11 +50,11 @@ export function Translate({
               disabled={disabled || used}
               onClick={() => onChange([...value, i])}
               className={cn(
-                "min-h-11 min-w-11 rounded-xl border-b-4 px-3 py-2 font-semibold transition-colors",
+                "min-h-11 min-w-11 rounded-xl border-2 border-b-4 px-3 py-2 font-semibold transition-colors",
                 "focus-visible:outline-2 focus-visible:outline-brand-ink",
                 used
                   ? "bg-line/60 border-line text-transparent select-none"
-                  : "bg-surface border-line hover:bg-paper"
+                  : "bg-surface border-line-strong hover:bg-paper"
               )}
             >
               {token}

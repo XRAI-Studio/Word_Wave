@@ -350,6 +350,8 @@ const measure = (page: Page, selector: string): Promise<Measure[]> =>
       return { w: r.width, h: r.height, font: parseFloat(getComputedStyle(el).fontSize) };
     })
   );
+/** A 60-character unbroken display name (the portal allows one). */
+const LONG_NAME = "Maximiliana".repeat(5) + "Wordy";
 const sizes = (ms: Measure[]) => ms.map((m) => `${m.font}px ${Math.round(m.w)}x${Math.round(m.h)}`).join(", ");
 
 /**
@@ -357,8 +359,9 @@ const sizes = (ms: Measure[]) => ms.map((m) => `${m.font}px ${Math.round(m.w)}x$
  * script's attributes and the page colours, no sideways page scroll on every main screen,
  * the top-bar course menu, the 404 page and a lesson through to its result screen,
  * `data-theme` after client-side navigations, and at 375 the phone sizes (lesson prompt
- * and answers >= 16 px; answers, Check and Continue >= 44 x 44). Screenshots go to
- * E2E_SHOTS when it is set, never into the repository.
+ * and answers >= 16 px; answers, Check and Continue >= 44 x 44; a failed-save toast at
+ * 16 px; a 60-character name inside the screen). Screenshots go to E2E_SHOTS when it is
+ * set, never into the repository.
  */
 async function appearancePass(browser: Browser, base: string, db: ReturnType<typeof createDbClient>) {
   log("appearance: both themes at 375 x 667 and 1280 x 800");
@@ -459,6 +462,21 @@ async function appearancePass(browser: Browser, base: string, db: ReturnType<typ
           await noSideScroll(path);
           await shot(path.slice(1));
         }
+        if (phone) {
+          // A 60-character unbroken name cannot widen the profile.
+          await page.route("**/api/user", async (route) => {
+            const res = await route.fetch();
+            await route.fulfill({ response: res, json: { ...(await res.json()), displayName: LONG_NAME } });
+          });
+          await page.goto(base + "/profile");
+          const h1 = page.getByRole("heading", { name: LONG_NAME });
+          await h1.waitFor({ timeout: 60_000 });
+          const nb = await h1.boundingBox();
+          check(!!nb && nb.x + nb.width <= vp.width, `${tag} a 60-character name stays inside the screen (right edge ${nb && Math.round(nb.x + nb.width)})`);
+          await noSideScroll("/profile with a 60-character name");
+          await shot("profile-long-name");
+          await page.unroute("**/api/user");
+        }
         await page.goto(base + "/no-such-page");
         await page.getByRole("heading", { name: "Page not found" }).waitFor({ timeout: 60_000 });
         await themed("the 404 page");
@@ -497,7 +515,28 @@ async function appearancePass(browser: Browser, base: string, db: ReturnType<typ
           await noSideScroll("lesson feedback");
           await shot("lesson-feedback");
           await page.getByRole("button", { name: "Continue" }).click();
-          for (const ch of mc.challenges.slice(1)) await solveChallenge(page, ch, false);
+          const rest = mc.challenges.slice(1);
+          if (phone && rest.length) {
+            // A failed save raises the toast (reading feedback): 16 px, inside the screen.
+            for (const ch of rest.slice(0, -1)) await solveChallenge(page, ch, false);
+            await page.route(`**/api/lessons/${mc.id}/complete`, (route) => route.abort(), { times: 1 });
+            await solveChallenge(page, rest[rest.length - 1], false);
+            const toast = page.locator("[data-sonner-toast]", { hasText: "Couldn't save your progress" });
+            await toast.waitFor({ timeout: 20_000 });
+            await page.waitForTimeout(500); // the toast's entry transition
+            const [tb] = await measure(page, "[data-sonner-toast]");
+            const [tt] = await measure(page, "[data-sonner-toast] [data-title]");
+            check(
+              tt?.font >= 16 && tb.w <= vp.width,
+              `${tag} the failed-save toast is at least 16 px and fits the screen (toast ${sizes([tb])}, title ${tt?.font}px)`
+            );
+            await noSideScroll("the failed-save toast");
+            await notWhite("the failed-save toast", "[data-sonner-toast]");
+            await shot("toast");
+            await page.getByRole("button", { name: "Continue" }).click(); // the retry
+          } else {
+            for (const ch of rest) await solveChallenge(page, ch, false);
+          }
           await resultStatus(page);
           await themed("the result screen");
           await noSideScroll("the result screen");

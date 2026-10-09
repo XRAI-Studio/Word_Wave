@@ -175,3 +175,14 @@ body {
   background-color: var(--color-paper);
   color: var(--color-ink);
 }
+
+/* Toasts carry reading feedback (e.g. a failed save): at least 16 px (class standard 6.4),
+   over Sonner's own 13 px. Sonner injects its stylesheet at runtime, so these selectors
+   out-rank its rules instead of relying on order. Colours come from the Toaster's
+   popover/border variables (ui/sonner.tsx). */
+:root [data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  font-size: 1rem;
+}
+:root [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
+  color: var(--color-ink-soft);
+}
