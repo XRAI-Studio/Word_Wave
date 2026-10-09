@@ -29,6 +29,7 @@ describe("ts-theme head script (class standard section 6)", () => {
     expect(html).toContain(THEME_HEAD_SCRIPT.slice(0, 60));
     expect(html.indexOf("ts-theme v1")).toBeLessThan(html.indexOf("<body"));
     expect(html).toContain(':root[data-theme="dark"] body');
+    expect(html).not.toMatch(/color-scheme:\s*light/);
   });
 });
 

@@ -6,7 +6,6 @@ import { THEME_HEAD_SCRIPT } from "@/lib/theme-head-script";
 // Both themes, keyed to the data-theme the head script sets: this page replaces the root
 // layout, so neither globals.css nor its tokens are loaded (class standard section 6).
 const STYLE = `
-:root { color-scheme: light; }
 body { margin: 0; padding: 4rem 1.5rem; text-align: center; font-family: system-ui, sans-serif;
   font-size: 1rem; line-height: 1.5; background: #faf6ee; color: #232a3d; }
 p { color: #5d6378; }

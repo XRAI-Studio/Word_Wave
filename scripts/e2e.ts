@@ -440,6 +440,15 @@ async function appearancePass(browser: Browser, base: string, db: ReturnType<typ
         await notWhite("the course menu", "[role=menu]");
         await shot("course-menu");
         await page.getByRole("button", { name: /Switch course/ }).click();
+        if (!phone) {
+          // The sidebar's "Jump to" menu (shadcn dropdown on the popover roles).
+          await page.getByRole("button", { name: "Jump to a lesson" }).click();
+          await page.getByRole("menu").waitFor({ timeout: 10_000 });
+          await notWhite("the Jump to menu", "[role=menu]");
+          await shot("jump-to");
+          await page.keyboard.press("Escape");
+          await page.getByRole("menu").waitFor({ state: "hidden", timeout: 10_000 });
+        }
 
         // --- client-side navigations keep the theme
         for (const [label, path] of [["Review", "/review"], ["Profile", "/profile"], ["Awards", "/awards"]] as const) {
