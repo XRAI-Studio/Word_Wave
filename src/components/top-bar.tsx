@@ -74,7 +74,7 @@ function CourseSwitcher({
       {open && (
         <div
           role="menu"
-          className="absolute left-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-2xl border-2 border-line bg-paper shadow-lg"
+          className="absolute left-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-2xl border-2 border-line bg-surface shadow-lg"
         >
           <p className="px-3 pt-2 pb-1 text-xs font-bold uppercase tracking-wide text-ink-soft">
             Courses
@@ -94,7 +94,7 @@ function CourseSwitcher({
               </span>
               <span className="flex-1">{c.name}</span>
               {c.code === activeCourse.code && (
-                <Check className="size-4 text-brand" aria-hidden />
+                <Check className="size-4 text-brand-ink" aria-hidden />
               )}
             </button>
           ))}
@@ -126,7 +126,7 @@ export function TopBar({
             hydrated ? "opacity-100" : "opacity-0"
           )}
         >
-          <span className="flex items-center gap-1.5 text-brand" title="Gems">
+          <span className="flex items-center gap-1.5 text-brand-ink" title="Gems">
             <Gem className="size-5 fill-current" aria-hidden />
             {gems}
             <span className="sr-only">gems</span>
@@ -136,7 +136,7 @@ export function TopBar({
             {streak}
             <span className="sr-only">day streak</span>
           </span>
-          <span className="flex items-center gap-1.5 text-saffron-deep" title="Total XP">
+          <span className="flex items-center gap-1.5 text-saffron-ink" title="Total XP">
             <Zap className="size-5 fill-current" aria-hidden />
             {xp}
             <span className="sr-only">total XP</span>

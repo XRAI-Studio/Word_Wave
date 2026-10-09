@@ -48,7 +48,7 @@ export function CourseMenu() {
         className={cn(
           "flex items-center gap-3 rounded-xl px-3 py-2.5 font-display font-bold uppercase tracking-wide text-sm",
           "text-ink-soft hover:bg-paper border border-transparent",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink"
         )}
       >
         <BookOpen className="size-5 shrink-0" />
@@ -72,7 +72,7 @@ export function CourseMenu() {
             </DropdownMenuGroup>
             {section.units.map((unit, ui) => (
               <DropdownMenuGroup key={unit.id}>
-                <DropdownMenuLabel className="pt-2 font-display text-brand">
+                <DropdownMenuLabel className="pt-2 font-display text-brand-ink">
                   {ui + 1} · {unit.title}
                 </DropdownMenuLabel>
                 {unit.lessons.map((lesson) => (
@@ -83,9 +83,9 @@ export function CourseMenu() {
                   >
                     <span className="flex-1">{lesson.title}</span>
                     {lesson.completed ? (
-                      <Check className="size-4 text-verde" aria-label="completed" />
+                      <Check className="size-4 text-verde-ink" aria-label="completed" />
                     ) : lesson.id === course.activeLessonId ? (
-                      <Star className="size-4 fill-current text-saffron-deep" aria-label="up next" />
+                      <Star className="size-4 fill-current text-saffron-ink" aria-label="up next" />
                     ) : null}
                   </DropdownMenuItem>
                 ))}

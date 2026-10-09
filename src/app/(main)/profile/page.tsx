@@ -17,7 +17,7 @@ function StatTile({
   label: string;
 }) {
   return (
-    <div className="rounded-2xl border-b-4 border-line bg-white px-3 py-4 text-center">
+    <div className="rounded-2xl border-b-4 border-line bg-surface px-3 py-4 text-center">
       <div className="mx-auto w-fit">{icon}</div>
       <p className="mt-1 font-display text-xl font-extrabold">{value}</p>
       <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">{label}</p>
@@ -65,7 +65,7 @@ export default function ProfilePage() {
 
       <div className="mt-8 grid grid-cols-2 gap-3">
         <StatTile
-          icon={<Zap className="size-6 fill-current text-saffron-deep" aria-hidden />}
+          icon={<Zap className="size-6 fill-current text-saffron-ink" aria-hidden />}
           value={xp}
           label="School XP"
         />
@@ -75,12 +75,12 @@ export default function ProfilePage() {
           label="Day streak"
         />
         <StatTile
-          icon={<Gem className="size-6 fill-current text-brand" aria-hidden />}
+          icon={<Gem className="size-6 fill-current text-brand-ink" aria-hidden />}
           value={gems}
           label="Gems"
         />
         <StatTile
-          icon={<BookOpen className="size-6 text-verde-deep" aria-hidden />}
+          icon={<BookOpen className="size-6 text-verde-ink" aria-hidden />}
           value={user?.lessonsCompleted ?? "…"}
           label="Lessons done"
         />

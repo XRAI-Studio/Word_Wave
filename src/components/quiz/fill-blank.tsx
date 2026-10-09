@@ -29,9 +29,9 @@ export function FillBlank({
       autoCapitalize="off"
       spellCheck={false}
       className={cn(
-        "w-full rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-4 font-semibold",
-        "placeholder:text-ink-soft/60",
-        "focus:border-brand focus:outline-none",
+        "w-full rounded-2xl border-2 border-b-4 border-line-strong bg-surface px-4 py-4 font-semibold",
+        "placeholder:text-ink-soft",
+        "focus:border-brand-ink focus:outline-none",
         "disabled:bg-paper"
       )}
     />

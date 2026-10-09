@@ -38,29 +38,29 @@ export function ResultScreen({
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
-      <h1 className="font-display text-3xl font-extrabold text-verde">{celebrateLabel}</h1>
+      <h1 className="font-display text-3xl font-extrabold text-verde-ink">{celebrateLabel}</h1>
       <p className="mt-1 text-ink-soft">Session complete</p>
 
       <div className="mt-8 grid w-full max-w-md grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-2xl border-b-4 border-saffron-deep bg-saffron px-3 py-4">
-          <Zap className="mx-auto size-6 fill-current text-ink" aria-hidden />
+        <div className="rounded-2xl border-b-4 border-saffron-deep bg-saffron px-3 py-4 text-on-saffron">
+          <Zap className="mx-auto size-6 fill-current" aria-hidden />
           <p className="mt-1 font-display text-xl font-extrabold" data-testid="xp-earned">
             {totals?.awarded_xp ?? 0}
           </p>
           <p className="text-xs font-bold uppercase tracking-wide">XP earned</p>
         </div>
-        <div className="rounded-2xl border-b-4 border-brand bg-brand-soft px-3 py-4">
-          <Gem className="mx-auto size-6 fill-current text-brand" aria-hidden />
+        <div className="rounded-2xl border-b-4 border-brand-ink bg-brand-soft px-3 py-4">
+          <Gem className="mx-auto size-6 fill-current text-brand-ink" aria-hidden />
           <p className="mt-1 font-display text-xl font-extrabold">{hydrated ? gems : "–"}</p>
           <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">Gems</p>
         </div>
-        <div className="rounded-2xl border-b-4 border-line bg-white px-3 py-4">
+        <div className="rounded-2xl border-b-4 border-line bg-surface px-3 py-4">
           <Flame className="mx-auto size-6 fill-current text-flame" aria-hidden />
           <p className="mt-1 font-display text-xl font-extrabold">{hydrated ? streak : "–"}</p>
           <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">Day streak</p>
         </div>
-        <div className="rounded-2xl border-b-4 border-line bg-white px-3 py-4">
-          <Target className="mx-auto size-6 text-brand" aria-hidden />
+        <div className="rounded-2xl border-b-4 border-line bg-surface px-3 py-4">
+          <Target className="mx-auto size-6 text-brand-ink" aria-hidden />
           <p className="mt-1 font-display text-xl font-extrabold">{Math.round(accuracy * 100)}%</p>
           <p className="text-xs font-bold uppercase tracking-wide text-ink-soft">Accuracy</p>
         </div>
@@ -77,9 +77,9 @@ export function ResultScreen({
           {totals.new_achievements.map((id) => (
             <div
               key={id}
-              className="flex items-center gap-3 rounded-2xl border-b-4 border-saffron-deep bg-saffron px-4 py-3"
+              className="flex items-center gap-3 rounded-2xl border-b-4 border-saffron-deep bg-saffron px-4 py-3 text-on-saffron"
             >
-              <Award className="size-5 shrink-0 text-ink" aria-hidden />
+              <Award className="size-5 shrink-0" aria-hidden />
               <span className="flex-1 font-semibold">Achievement unlocked</span>
             </div>
           ))}

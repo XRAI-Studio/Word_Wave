@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -49,30 +49,31 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  /* shadcn roles, mapped onto the LingoDuo palette below so both themes follow it. */
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-brand);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-paper);
+  --secondary-foreground: var(--color-ink);
+  --muted: var(--color-paper);
+  --muted-foreground: var(--color-ink-soft);
+  --accent: var(--color-brand-soft);
+  --accent-foreground: var(--color-brand-ink);
+  --destructive: var(--color-heart-ink);
+  --border: var(--color-line);
+  --input: var(--color-line-strong);
+  --ring: var(--color-brand-ink);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 1rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -81,27 +82,28 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+/* Dark theme: the head script sets data-theme on <html> from the portal's ts_theme
+   cookie (docs/class-standard.md section 6). Only colours change; the shadcn roles above
+   follow the LingoDuo values through var(). */
+:root[data-theme="dark"] {
+  --color-brand-soft: #1c2b52;
+  --color-brand-ink: #8db2ff;
+  --color-saffron-soft: #3a2e10;
+  --color-saffron-ink: #f2b230;
+  --color-flame: #ff9a5e;
+  --color-heart-soft: #3d1c22;
+  --color-heart-ink: #ff9497;
+  --color-verde-soft: #15372a;
+  --color-verde-ink: #63d495;
+  --color-paper: #131a29;
+  --color-surface: #1e2638;
+  --color-ink: #edf0f7;
+  --color-ink-soft: #a9b1c5;
+  --color-line: #364059;
+  --color-line-strong: #7c87a3;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -130,36 +132,43 @@
 }
 /* ---------- LingoDuo theme ---------- */
 
-@theme {
+/* `static`: every colour is emitted as a variable, so the shadcn roles and the dark
+   block above can reference and override them. Fills (brand, verde, heart, saffron) keep
+   one value in both themes and carry white (or on-saffron) text; text on the page uses
+   the *-ink roles, which change per theme. */
+@theme static {
   --color-brand: #1e5ae8;
   --color-brand-deep: #1747b8;
   --color-brand-soft: #e8effc;
+  --color-brand-ink: #1e5ae8;
   --color-saffron: #ffb703;
   --color-saffron-deep: #d99a00;
   --color-saffron-soft: #fff3d6;
-  --color-flame: #f4772e;
-  --color-heart: #e5484d;
-  --color-heart-deep: #c53539;
+  --color-saffron-ink: #8a5c00;
+  --color-on-saffron: #232a3d;
+  --color-flame: #b5490f;
+  --color-heart: #d13a3f;
+  --color-heart-deep: #a82c30;
   --color-heart-soft: #fdeaea;
-  --color-verde: #2fa562;
-  --color-verde-deep: #23854e;
+  --color-heart-ink: #b3282d;
+  --color-verde: #1f8049;
+  --color-verde-deep: #17653a;
   --color-verde-soft: #e4f5eb;
+  --color-verde-ink: #17703f;
   --color-paper: #faf6ee;
+  --color-surface: #ffffff;
   --color-ink: #232a3d;
-  --color-ink-soft: #7c8296;
+  --color-ink-soft: #5d6378;
   --color-line: #e7e2d6;
+  --color-line-strong: #878c9c;
+
+  /* Captions and metadata at least 13 px (class standard 6.4). */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: calc(1.125 / 0.8125);
 }
 
 @theme inline {
   --font-display: var(--font-baloo);
-}
-
-:root {
-  --font-sans: var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
-  --primary: #1e5ae8;
-  --primary-foreground: #ffffff;
-  --ring: #1e5ae8;
-  --radius: 1rem;
 }
 
 body {

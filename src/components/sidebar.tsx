@@ -16,8 +16,8 @@ const items = [
 export function Sidebar() {
   const pathname = usePathname();
   return (
-    <aside className="hidden sm:flex flex-col gap-2 border-r border-line bg-white px-3 py-6 w-16 lg:w-56 shrink-0">
-      <Link href="/learn" className="mb-6 px-2 font-display text-2xl font-extrabold text-brand">
+    <aside className="hidden sm:flex flex-col gap-2 border-r border-line bg-surface px-3 py-6 w-16 lg:w-56 shrink-0">
+      <Link href="/learn" className="mb-6 px-2 font-display text-2xl font-extrabold text-brand-ink">
         <span className="lg:hidden">W</span>
         <span className="hidden lg:inline">WordWave</span>
       </Link>
@@ -30,7 +30,7 @@ export function Sidebar() {
             className={cn(
               "flex items-center gap-3 rounded-xl px-3 py-2.5 font-display font-bold uppercase tracking-wide text-sm",
               active
-                ? "bg-brand-soft text-brand border border-brand/40"
+                ? "bg-brand-soft text-brand-ink border border-brand-ink/40"
                 : "text-ink-soft hover:bg-paper border border-transparent"
             )}
           >

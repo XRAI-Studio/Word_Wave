@@ -264,7 +264,7 @@ export function Quiz({
           onClick={(e) => void leave.request(mode === "lesson" ? "/learn" : "/review", e.currentTarget)}
           aria-label="Quit session"
           aria-disabled={leave.busy || undefined}
-          className="rounded text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="rounded text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink"
         >
           <X className="size-6" />
         </button>
@@ -334,7 +334,7 @@ export function Quiz({
               ? "border-verde bg-verde-soft"
               : status === "wrong"
                 ? "border-heart bg-heart-soft"
-                : "border-line bg-white"
+                : "border-line bg-surface"
           )}
         >
           <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 py-4">
@@ -345,17 +345,17 @@ export function Quiz({
                 </span>
               ) : (
                 (status === "correct" || status === "submitting") && (
-                  <span className="text-verde-deep">{labels.correct}</span>
+                  <span className="text-verde-ink">{labels.correct}</span>
                 )
               )}
               {status === "wrong" && (
-                <span className="text-heart-deep">
+                <span className="text-heart-ink">
                   Correct answer: <span className="font-sans font-semibold">{current.correctAnswer}</span>
                 </span>
               )}
             </div>
             {current.type === "MATCH" && status === "answering" ? (
-              <span className="text-ink-soft text-sm">Match all the pairs to continue</span>
+              <span className="text-ink-soft">Match all the pairs to continue</span>
             ) : status === "answering" ? (
               <ChunkyButton onClick={check} disabled={!canCheck} className="min-w-36">
                 Check

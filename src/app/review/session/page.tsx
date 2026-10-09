@@ -59,7 +59,7 @@ function ReviewLoader() {
         <button
           type="button"
           onClick={() => window.location.assign("/learn")}
-          className="mt-6 inline-block rounded font-bold text-brand underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+          className="mt-6 inline-block rounded font-bold text-brand-ink underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink"
         >
           Back to the path
         </button>

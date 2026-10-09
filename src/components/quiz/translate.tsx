@@ -23,7 +23,7 @@ export function Translate({
     <div>
       <div
         aria-label="Your answer"
-        className="min-h-16 rounded-2xl border-2 border-dashed border-line bg-white/60 p-3 flex flex-wrap gap-2"
+        className="min-h-16 rounded-2xl border-2 border-dashed border-line bg-surface/60 p-3 flex flex-wrap gap-2"
       >
         {value.length === 0 && (
           <span className="self-center px-1 text-ink-soft">Tap the words below…</span>
@@ -34,7 +34,7 @@ export function Translate({
             disabled={disabled}
             onClick={() => onChange(value.filter((v) => v !== bankIdx))}
             aria-label={`Remove "${meta.wordBank[bankIdx]}"`}
-            className="rounded-xl border-b-4 border-line bg-white px-3 py-2 font-semibold hover:bg-paper focus-visible:outline-2 focus-visible:outline-brand"
+            className="min-h-11 min-w-11 rounded-xl border-b-4 border-line bg-surface px-3 py-2 font-semibold hover:bg-paper focus-visible:outline-2 focus-visible:outline-brand-ink"
           >
             {meta.wordBank[bankIdx]}
           </button>
@@ -50,11 +50,11 @@ export function Translate({
               disabled={disabled || used}
               onClick={() => onChange([...value, i])}
               className={cn(
-                "rounded-xl border-b-4 px-3 py-2 font-semibold transition-colors",
-                "focus-visible:outline-2 focus-visible:outline-brand",
+                "min-h-11 min-w-11 rounded-xl border-b-4 px-3 py-2 font-semibold transition-colors",
+                "focus-visible:outline-2 focus-visible:outline-brand-ink",
                 used
                   ? "bg-line/60 border-line text-transparent select-none"
-                  : "bg-white border-line hover:bg-paper"
+                  : "bg-surface border-line hover:bg-paper"
               )}
             >
               {token}

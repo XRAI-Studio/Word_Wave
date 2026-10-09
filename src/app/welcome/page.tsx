@@ -48,7 +48,7 @@ export default function WelcomePage() {
         <HomeRoomButton />
       </div>
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-10">
-        <h1 className="font-display text-3xl font-extrabold text-brand">Welcome to WordWave</h1>
+        <h1 className="font-display text-3xl font-extrabold text-brand-ink">Welcome to WordWave</h1>
         <p className="mt-2 text-ink-soft">Which language do you want to learn?</p>
 
         <div className="mt-8 space-y-3" aria-busy={!courses}>
@@ -58,7 +58,7 @@ export default function WelcomePage() {
               type="button"
               onClick={() => choose(c.code)}
               disabled={choosing !== null || departing}
-              className="flex w-full items-center gap-4 rounded-2xl border-2 border-b-4 border-line bg-white px-4 py-4 text-left font-display font-bold transition-colors hover:border-brand disabled:opacity-60"
+              className="flex w-full items-center gap-4 rounded-2xl border-2 border-b-4 border-line bg-surface px-4 py-4 text-left font-display font-bold transition-colors hover:border-brand-ink disabled:opacity-60"
             >
               <span className="text-3xl leading-none" aria-hidden>
                 {c.emblem}

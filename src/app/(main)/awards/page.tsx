@@ -9,13 +9,13 @@ export default function AwardsPage() {
   const links = [
     {
       href: `${PORTAL}/achievements`,
-      icon: <Award className="size-6 text-saffron-deep" aria-hidden />,
+      icon: <Award className="size-6 text-saffron-ink" aria-hidden />,
       title: "Achievements",
       body: "Word Wave's badges sit alongside every other class's.",
     },
     {
       href: `${PORTAL}/shop`,
-      icon: <ShoppingBag className="size-6 text-brand" aria-hidden />,
+      icon: <ShoppingBag className="size-6 text-brand-ink" aria-hidden />,
       title: "Shop",
       body: "Spend gems on streak freezes and more.",
     },
@@ -29,7 +29,7 @@ export default function AwardsPage() {
           <a
             key={l.href}
             href={l.href}
-            className="flex items-center gap-4 rounded-2xl border-b-4 border-line bg-white px-4 py-4"
+            className="flex items-center gap-4 rounded-2xl border-b-4 border-line bg-surface px-4 py-4"
           >
             {l.icon}
             <span className="flex-1">

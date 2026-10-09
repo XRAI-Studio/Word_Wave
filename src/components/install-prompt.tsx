@@ -46,7 +46,7 @@ export function InstallPrompt() {
   }
 
   return (
-    <div className="relative mt-4 rounded-3xl border-2 border-b-4 border-line bg-white p-4">
+    <div className="relative mt-4 rounded-3xl border-2 border-b-4 border-line bg-surface p-4">
       <button
         type="button"
         onClick={dismiss}
@@ -56,7 +56,7 @@ export function InstallPrompt() {
         <X className="size-4" aria-hidden />
       </button>
       <div className="flex items-center gap-3">
-        <Smartphone className="size-8 shrink-0 text-brand" aria-hidden />
+        <Smartphone className="size-8 shrink-0 text-brand-ink" aria-hidden />
         <div className="min-w-0">
           <p className="font-display font-extrabold">Install WordWave</p>
           <p className="text-sm text-ink-soft">Add it to your home screen and play like an app.</p>

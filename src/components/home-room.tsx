@@ -63,14 +63,14 @@ export function LeaveDialog({
   }, [onStay]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
-        className="w-full max-w-md rounded-3xl border-2 border-b-4 border-line bg-white p-6 text-center shadow-xl"
+        className="w-full max-w-md rounded-3xl border-2 border-b-4 border-line bg-surface p-6 text-center shadow-xl"
       >
         <h2 id={titleId} className="font-display text-xl font-extrabold text-ink">
           {title}
@@ -169,9 +169,9 @@ export function HomeRoomButton({ className }: { className?: string }) {
         onClick={(e) => void request(HOME, e.currentTarget)}
         aria-disabled={busy || undefined}
         className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-b-4 border-line bg-white px-3 py-1.5",
-          "font-display text-sm font-bold text-ink transition-colors hover:border-brand hover:text-brand",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+          "inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-b-4 border-line bg-surface px-3 py-1.5",
+          "font-display text-sm font-bold text-ink transition-colors hover:border-brand-ink hover:text-brand-ink",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink",
           busy && "opacity-60",
           className
         )}

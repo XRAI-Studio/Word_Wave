@@ -18,7 +18,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-20 flex border-t-2 border-line bg-white pb-[env(safe-area-inset-bottom)] sm:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 flex border-t-2 border-line bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
     >
       {items.map(({ href, label, icon: Icon }) => {
         const active = pathname.startsWith(href);
@@ -28,8 +28,8 @@ export function MobileNav() {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex flex-1 flex-col items-center gap-0.5 py-2 font-display text-[10px] font-bold uppercase tracking-wide",
-              active ? "text-brand" : "text-ink-soft"
+              "flex flex-1 flex-col items-center gap-0.5 py-2 font-display text-xs font-bold uppercase tracking-wide",
+              active ? "text-brand-ink" : "text-ink-soft"
             )}
           >
             <Icon className={cn("size-6", active && "fill-brand-soft")} />

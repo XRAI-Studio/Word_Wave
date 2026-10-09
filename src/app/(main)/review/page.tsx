@@ -19,8 +19,8 @@ export default function ReviewPage() {
 
   return (
     <div className="mx-auto w-full max-w-xl px-4 py-12">
-      <div className="rounded-3xl border border-line bg-white p-8 text-center">
-        <BookOpenCheck className="mx-auto size-12 text-brand" aria-hidden />
+      <div className="rounded-3xl border border-line bg-surface p-8 text-center">
+        <BookOpenCheck className="mx-auto size-12 text-brand-ink" aria-hidden />
         <h1 className="mt-4 font-display text-2xl font-extrabold">Review</h1>
         <p className="mt-2 text-ink-soft">
           Words you missed come back here on a spaced schedule — get them right and they

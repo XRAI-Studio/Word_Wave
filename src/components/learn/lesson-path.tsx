@@ -26,11 +26,11 @@ export function LessonPath({
   return (
     <section className="mt-8">
       <div className="rounded-3xl bg-brand text-white px-6 py-5 border-b-4 border-brand-deep">
-        <p className="font-display text-xs font-extrabold uppercase tracking-[0.2em] text-white/70">
+        <p className="font-display text-xs font-extrabold uppercase tracking-[0.2em] text-white/90">
           Unit {unitNumber}
         </p>
         <h3 className="font-display text-xl font-extrabold">{unit.title}</h3>
-        <p className="text-white/85 text-sm">{unit.description}</p>
+        <p className="text-white/90 text-sm">{unit.description}</p>
       </div>
 
       <ol className="mt-12 flex flex-col items-center gap-12">
@@ -48,7 +48,7 @@ export function LessonPath({
               <div className="relative flex flex-col items-center">
                 {state === "active" && (
                   <span
-                    className="absolute -top-9 rounded-xl border border-line bg-white px-3 py-1 font-display text-xs font-extrabold uppercase tracking-widest text-brand shadow-sm motion-safe:animate-bounce"
+                    className="absolute -top-9 rounded-xl border border-line bg-surface px-3 py-1 font-display text-xs font-extrabold uppercase tracking-widest text-brand-ink shadow-sm motion-safe:animate-bounce"
                     aria-hidden
                   >
                     Start
@@ -62,10 +62,10 @@ export function LessonPath({
                   }`}
                   className={cn(
                     "flex size-16 items-center justify-center rounded-full border-b-8 transition-transform hover:scale-105",
-                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
-                    state === "done" && "bg-saffron border-saffron-deep text-ink",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink",
+                    state === "done" && "bg-saffron border-saffron-deep text-on-saffron",
                     state === "active" && "bg-brand border-brand-deep text-white",
-                    state === "open" && "bg-white border-line text-brand"
+                    state === "open" && "bg-surface border-line text-brand-ink"
                   )}
                 >
                   {state === "done" ? (

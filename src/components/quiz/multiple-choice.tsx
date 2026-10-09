@@ -26,11 +26,11 @@ export function MultipleChoice({
             disabled={disabled}
             onClick={() => onChange(choice)}
             className={cn(
-              "rounded-2xl border-b-4 px-4 py-4 text-left font-semibold transition-colors",
-              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+              "rounded-2xl border-2 border-b-4 px-4 py-4 text-left font-semibold transition-colors",
+              "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink",
               selected
-                ? "bg-brand-soft border-brand text-brand"
-                : "bg-white border-line hover:bg-paper"
+                ? "bg-brand-soft border-brand-ink text-brand-ink"
+                : "bg-surface border-line-strong hover:bg-paper"
             )}
           >
             <span className="mr-3 inline-flex size-7 items-center justify-center rounded-lg border border-current/30 font-display text-sm">

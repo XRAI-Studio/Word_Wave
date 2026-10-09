@@ -17,10 +17,11 @@
  */
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import http from "node:http";
 import net from "node:net";
-import { chromium, type Dialog, type Page, type Route } from "playwright";
+import { join } from "node:path";
+import { chromium, type Browser, type Dialog, type Page, type Route } from "playwright";
 import { createDbClient } from "../src/lib/db";
 
 try {
@@ -330,6 +331,190 @@ const historyStep = (page: Page, dir: "back" | "forward") =>
   page.evaluate((d) => {
     setTimeout(() => (d === "back" ? history.back() : history.forward()), 0);
   }, dir);
+
+// ---------------------------------------------------------------- appearance (class standard section 6)
+
+const THEMES = ["light", "dark"] as const;
+/** Page backgrounds per theme (`--color-paper`), to prove the stylesheet followed `data-theme`. */
+const PAGE_BG = { light: "rgb(250, 246, 238)", dark: "rgb(19, 26, 41)" } as const;
+const VIEWPORTS = [
+  { width: 375, height: 667 },
+  { width: 1280, height: 800 },
+] as const;
+
+type Measure = { w: number; h: number; font: number };
+const measure = (page: Page, selector: string): Promise<Measure[]> =>
+  page.locator(selector).evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { w: r.width, h: r.height, font: parseFloat(getComputedStyle(el).fontSize) };
+    })
+  );
+const sizes = (ms: Measure[]) => ms.map((m) => `${m.font}px ${Math.round(m.w)}x${Math.round(m.h)}`).join(", ");
+
+/**
+ * Each theme (cookie `ts_theme` on the test origin) at 375 x 667 and 1280 x 800: the head
+ * script's attributes and the page colours, no sideways page scroll on every main screen,
+ * the top-bar course menu, the 404 page and a lesson through to its result screen,
+ * `data-theme` after client-side navigations, and at 375 the phone sizes (lesson prompt
+ * and answers >= 16 px; answers, Check and Continue >= 44 x 44). Screenshots go to
+ * E2E_SHOTS when it is set, never into the repository.
+ */
+async function appearancePass(browser: Browser, base: string, db: ReturnType<typeof createDbClient>) {
+  log("appearance: both themes at 375 x 667 and 1280 x 800");
+  const get = async <T>(p: string): Promise<T> => (await fetch(base + p)).json() as Promise<T>;
+  const units = await get<Units>("/api/units");
+  const lessonList = units.sections.flatMap((s) => s.units).flatMap((u) => u.lessons);
+  let mc: { id: string; challenges: Challenge[] } | null = null;
+  let tr: { id: string; challenges: Challenge[]; at: number } | null = null;
+  for (const l of lessonList) {
+    const data = await get<{ challenges: Challenge[] }>(`/api/lessons/${l.id}`);
+    if (!mc && data.challenges[0]?.type === "MULTIPLE_CHOICE") mc = { id: l.id, ...data };
+    const at = data.challenges.findIndex((c) => c.type === "TRANSLATE");
+    if (!tr && at >= 0) tr = { id: l.id, ...data, at };
+    if (mc && tr) break;
+  }
+  check(mc !== null, "a lesson that opens with a multiple-choice question exists");
+  check(tr !== null, "a lesson with a word-bank translation exists");
+  const shotsDir = process.env.E2E_SHOTS;
+  if (shotsDir) mkdirSync(shotsDir, { recursive: true });
+
+  for (const theme of THEMES) {
+    for (const vp of VIEWPORTS) {
+      const phone = vp.width === 375;
+      const tag = `${vp.width} ${theme}`;
+      const context = await browser.newContext({ viewport: vp });
+      await context.addCookies([{ name: "ts_theme", value: theme, url: base }]);
+      const page = await context.newPage();
+      const shot = async (name: string) => {
+        if (shotsDir) await page.screenshot({ path: join(shotsDir, `${name}-${vp.width}-${theme}.png`) });
+      };
+      const themed = async (where: string) => {
+        const t = await page.evaluate(() => ({
+          theme: document.documentElement.getAttribute("data-theme"),
+          pref: document.documentElement.getAttribute("data-theme-pref"),
+          scheme: document.documentElement.style.colorScheme,
+          bg: getComputedStyle(document.body).backgroundColor,
+        }));
+        check(
+          t.theme === theme && t.pref === theme && t.scheme === theme && t.bg === PAGE_BG[theme],
+          `${tag} ${where}: data-theme ${t.theme}, pref ${t.pref}, color-scheme ${t.scheme}, page ${t.bg}`
+        );
+      };
+      const noSideScroll = async (where: string) => {
+        const o = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: window.innerWidth }));
+        check(o.sw <= o.iw, `${tag} ${where}: no sideways page scroll (scrollWidth ${o.sw}, innerWidth ${o.iw})`);
+      };
+      const notWhite = async (where: string, selector: string) => {
+        if (theme !== "dark") return;
+        const bg = await page.locator(selector).first().evaluate((el) => getComputedStyle(el).backgroundColor);
+        check(bg !== "rgb(255, 255, 255)", `${tag} ${where} is not a white panel in dark (${bg})`);
+      };
+      try {
+        // --- the course picker (the learner's course is cleared, then picked again)
+        await db.user.update({ where: { id: MOCK_USER }, data: { activeCourseId: null } });
+        await page.goto(base + "/welcome");
+        await page.getByRole("button", { name: /Spanish/ }).waitFor({ timeout: 60_000 });
+        await themed("/welcome");
+        await noSideScroll("/welcome");
+        await shot("welcome");
+        await page.getByRole("button", { name: /Spanish/ }).click();
+        await page.waitForURL("**/learn", { timeout: 30_000 });
+
+        // --- the learn path, then the top-bar course menu open
+        await hudXp(page);
+        await page.getByRole("button", { name: /start lesson$/ }).waitFor({ timeout: 60_000 });
+        await themed("/learn");
+        await noSideScroll("/learn");
+        await notWhite("the navigation", phone ? "nav[aria-label=Primary]" : "aside");
+        await shot("learn");
+        await page.getByRole("button", { name: /Switch course/ }).click();
+        const menu = page.getByRole("menu");
+        await menu.waitFor({ timeout: 10_000 });
+        const mb = await menu.boundingBox();
+        check(
+          !!mb && mb.x >= 0 && mb.x + mb.width <= vp.width,
+          `${tag} the course menu fits the screen (x ${mb?.x} to ${mb ? mb.x + mb.width : "?"})`
+        );
+        await noSideScroll("/learn with the course menu open");
+        await notWhite("the course menu", "[role=menu]");
+        await shot("course-menu");
+        await page.getByRole("button", { name: /Switch course/ }).click();
+
+        // --- client-side navigations keep the theme
+        for (const [label, path] of [["Review", "/review"], ["Profile", "/profile"], ["Awards", "/awards"]] as const) {
+          await page.getByRole("link", { name: label, exact: true }).click();
+          await page.waitForURL(`**${path}`, { timeout: 30_000 });
+          await page.locator("main h1").first().waitFor({ timeout: 30_000 });
+          await themed(`${path} after a client-side navigation`);
+          await noSideScroll(path);
+          await shot(path.slice(1));
+        }
+        await page.goto(base + "/no-such-page");
+        await page.getByRole("heading", { name: "Page not found" }).waitFor({ timeout: 60_000 });
+        await themed("the 404 page");
+        await noSideScroll("the 404 page");
+        await shot("not-found");
+
+        // --- a lesson: prompt, answer choices, Check, Continue, then its result screen
+        if (mc) {
+          const first = mc.challenges[0];
+          await page.goto(`${base}/lesson/${mc.id}`);
+          await page.getByRole("heading", { name: first.prompt }).waitFor({ timeout: 60_000 });
+          await themed("a lesson");
+          await noSideScroll("a lesson");
+          await notWhite("an answer choice", "[role=radio]");
+          await shot("lesson");
+          if (phone) {
+            const [prompt] = await measure(page, "fieldset h1");
+            check(prompt?.font >= 16, `${tag} the lesson prompt is at least 16 px (${prompt?.font}px)`);
+            const options = await measure(page, "[role=radio]");
+            check(
+              options.length > 1 && options.every((o) => o.font >= 16 && o.w >= 44 && o.h >= 44),
+              `${tag} answer choices are at least 16 px and 44 x 44 (${sizes(options)})`
+            );
+          }
+          await page.getByRole("radio", { name: new RegExp(`\\d+\\s*${escapeRe(first.correctAnswer)}$`) }).click();
+          if (phone) {
+            const [cb] = await measure(page, "button:text-is('Check')");
+            check(cb?.w >= 44 && cb?.h >= 44 && cb?.font >= 16, `${tag} Check is at least 44 x 44 with a 16 px label (${sizes([cb])})`);
+          }
+          await page.getByRole("button", { name: "Check" }).click();
+          await page.getByRole("button", { name: "Continue" }).waitFor({ timeout: 10_000 });
+          if (phone) {
+            const [cn] = await measure(page, "button:text-is('Continue')");
+            check(cn?.w >= 44 && cn?.h >= 44 && cn?.font >= 16, `${tag} Continue is at least 44 x 44 with a 16 px label (${sizes([cn])})`);
+          }
+          await noSideScroll("lesson feedback");
+          await shot("lesson-feedback");
+          await page.getByRole("button", { name: "Continue" }).click();
+          for (const ch of mc.challenges.slice(1)) await solveChallenge(page, ch, false);
+          await resultStatus(page);
+          await themed("the result screen");
+          await noSideScroll("the result screen");
+          await shot("result");
+        }
+        if (tr) {
+          // Answer the questions before it, then measure the word bank.
+          await page.goto(`${base}/lesson/${tr.id}`);
+          for (const ch of tr.challenges.slice(0, tr.at)) await solveChallenge(page, ch, false);
+          await page.getByRole("heading", { name: tr.challenges[tr.at].prompt }).waitFor({ timeout: 60_000 });
+          await noSideScroll("a word-bank lesson");
+          await shot("lesson-translate");
+          if (phone) {
+            const bank = await measure(page, "fieldset .mt-6 > button");
+            check(
+              bank.length > 0 && bank.every((b) => b.font >= 16 && b.w >= 44 && b.h >= 44),
+              `${tag} word-bank answers are at least 16 px and 44 x 44 (${sizes(bank)})`
+            );
+          }
+        }
+      } finally {
+        await context.close();
+      }
+    }
+  }
+}
 
 async function learnerFlowInDevMode() {
   log("part (b): learner flow on the dev mock");
@@ -1097,6 +1282,8 @@ async function learnerFlowInDevMode() {
     check(page.url() === HOME, "and it goes to the portal");
 
     await context.close();
+
+    await appearancePass(browser, base, db);
   } finally {
     await browser.close();
     stopServer(server, port);
