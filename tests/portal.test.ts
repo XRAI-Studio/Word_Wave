@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMockPortal, createPortalClient, portalFor, XP_EVENTS, FIRST_LESSON_ACHIEVEMENT } from "@/lib/portal";
+import { createMockPortal, createPortalClient, portalFor, DAILY_GEM_CAP, EVENTS, FIRST_LESSON_ACHIEVEMENT, gemGrant } from "@/lib/portal";
 
 const who = { token: "tok-123", userId: "u1" };
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -114,10 +114,43 @@ describe("mock portal", () => {
     const w = { token: null, userId: "u" };
     for (let i = 0; i < 5; i++) expect((await m.award(w, "review_session", {}))!.awarded_xp).toBe(10);
     expect((await m.award(w, "review_session", {}))!.awarded_xp).toBe(0);
-    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
-    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(5);
-    expect(m.totals("u")).toMatchObject({ xp: 50, gems: 5 });
-    await expect(m.currentTotals(w)).resolves.toEqual({ xp: 50, gems: 5, level: 1, streak: 1 });
+    // Five paid reviews at 2 gems each, then the achievement's 25 once.
+    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(35);
+    expect((await m.unlock(w, FIRST_LESSON_ACHIEVEMENT))!.gems).toBe(35);
+    expect(m.totals("u")).toMatchObject({ xp: 50, gems: 35 });
+    await expect(m.currentTotals(w)).resolves.toEqual({ xp: 50, gems: 35, level: 1, streak: 1 });
+  });
+
+  it("pays each event's gems with its XP, as the portal's award() does", async () => {
+    const m = createMockPortal();
+    const w = { token: null, userId: "u" };
+    expect(await m.award(w, "lesson_complete", {})).toMatchObject({ awarded_xp: 10, awarded_gems: 3, gems: 3 });
+    expect(await m.award(w, "review_session", {})).toMatchObject({ awarded_xp: 10, awarded_gems: 2, gems: 5 });
+  });
+
+  it("pays no gems on a use the per-day cap refuses XP for", async () => {
+    const m = createMockPortal();
+    const w = { token: null, userId: "u" };
+    for (let i = 0; i < 5; i++) await m.award(w, "review_session", {});
+    expect(await m.award(w, "review_session", {})).toMatchObject({ awarded_xp: 0, awarded_gems: 0, gems: 10 });
+  });
+
+  it("keeps the first lesson's award and achievement gems apart", async () => {
+    const m = createMockPortal();
+    const w = { token: null, userId: "u" };
+    expect(await m.award(w, "lesson_complete", {})).toMatchObject({ awarded_gems: 3, gems: 3 });
+    const unlocked = await m.unlock(w, FIRST_LESSON_ACHIEVEMENT);
+    expect(unlocked).toMatchObject({ gems: 28, new_achievements: [FIRST_LESSON_ACHIEVEMENT] });
+    expect(unlocked).not.toHaveProperty("awarded_gems");
+  });
+
+  it("caps a day's event gems at the class's daily gem cap", () => {
+    expect(DAILY_GEM_CAP).toBe(80);
+    expect(gemGrant(3, 0, 80)).toBe(3);
+    expect(gemGrant(3, 78, 80)).toBe(2);
+    expect(gemGrant(3, 80, 80)).toBe(0);
+    expect(gemGrant(3, 0, 0)).toBe(0);
+    expect(gemGrant(0, 0, 80)).toBe(0);
   });
 
   it("keeps the newest summary: an older rev is refused", async () => {
@@ -131,10 +164,13 @@ describe("mock portal", () => {
 
 describe("seeded events (class standard rule 3.2)", () => {
   // travelschooling-portal/supabase/seed.sql line 5:
-  // ('wordwave', ..., '{"lesson_complete":{"xp":10,"per_day":20},"review_session":{"xp":10,"per_day":5}}', 300)
-  // and line 47: 'wordwave-first-lesson'.
+  // ('wordwave', ..., '{"lesson_complete":{"xp":10,"per_day":20,"gems":3},"review_session":{"xp":10,"per_day":5,"gems":2}}', 300, 80)
+  // and line 75: 'wordwave-first-lesson'.
   it("sends only the events and achievement the portal seed defines", () => {
-    expect(XP_EVENTS).toEqual({ lesson_complete: 10, review_session: 10 });
+    expect(EVENTS).toEqual({
+      lesson_complete: { xp: 10, per_day: 20, gems: 3 },
+      review_session: { xp: 10, per_day: 5, gems: 2 },
+    });
     expect(FIRST_LESSON_ACHIEVEMENT).toBe("wordwave-first-lesson");
   });
 });

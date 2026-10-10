@@ -3,6 +3,7 @@ import type { Course, User } from "@prisma/client";
 import { isMockSession, type SessionEnv } from "@/lib/auth-env";
 import { db } from "@/lib/db";
 import { extractAccessToken, verifySession, type SessionResult } from "@/lib/session";
+import { projectRef } from "@/lib/session-cookie";
 
 /**
  * Identity comes from the portal session only (class standard rules 2.1–2.3). There is no
@@ -43,7 +44,7 @@ export async function readSession(
 ): Promise<VerifiedSession> {
   if (devExpired(cookieHeader, env)) return { session: { ok: false, reason: "invalid" }, token: null };
   const session = await verify(cookieHeader, { env });
-  const token = session.ok && !isMockSession(env) ? extractAccessToken(cookieHeader) : null;
+  const token = session.ok && !isMockSession(env) ? extractAccessToken(cookieHeader, projectRef(env.NEXT_PUBLIC_SUPABASE_URL)) : null;
   return { session, token };
 }
 

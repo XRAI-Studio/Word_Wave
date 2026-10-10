@@ -641,7 +641,8 @@ async function learnerFlowInDevMode() {
     await page.getByRole("button", { name: "Back to the path" }).click();
     await page.waitForURL("**/learn");
     check((await hudXp(page)) === 10, "HUD shows 10 XP after returning to the path");
-    check((await hudGems(page)) === 5, "HUD shows the first-lesson achievement's 5 gems without a reload");
+    // The award pays the lesson's 3 gems first; the unlock's totals then add the achievement's 25.
+    check((await hudGems(page)) === 28, "HUD shows the lesson's 3 gems and the first-lesson achievement's 25 without a reload");
     await page.reload();
     check((await hudXp(page)) === 10, "HUD still shows 10 XP after a reload");
 
@@ -830,7 +831,7 @@ async function learnerFlowInDevMode() {
     check((await hudXp(page)) === xpNow, `the repeat's historical totals do not rewind the HUD (WW-P5-R4-002; HUD ${xpNow})`);
 
     // --- a repeat of a send that is still finishing waits for its outcome (WW-P5-R4-001)
-    const recordedAward = { status: "awarded", result: { awarded_xp: 10, xp: xpNow, gems: 5, level: 1, streak: 1, level_up: false, new_achievements: [] } };
+    const recordedAward = { status: "awarded", result: { awarded_xp: 10, xp: xpNow, gems: 25, level: 1, streak: 1, level_up: false, new_achievements: [] } };
     const inflight = randomUUID();
     await db.submission.create({ data: { userId: MOCK_USER, id: inflight } });
     const early = await fetch(base + "/api/review/complete", {

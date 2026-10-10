@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-import { extractAccessToken } from "@/lib/session-cookie";
+import { extractAccessToken, projectRef } from "@/lib/session-cookie";
 
 export { extractAccessToken };
 
@@ -34,10 +34,10 @@ export async function verifySession(cookieHeader: string | null, opts: SessionOp
   if (env.NEXT_PUBLIC_TS_KIT === "mock" && env.NODE_ENV !== "production") {
     return { ok: true, sub: "mock-user", approved: true, displayName: "Dev Learner" };
   }
-  const token = extractAccessToken(cookieHeader);
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
+  const token = extractAccessToken(cookieHeader, projectRef(supabaseUrl));
   if (!token) return { ok: false, reason: "missing" };
   try {
-    const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
     const { payload } = await jwtVerify(token, opts.jwks ?? defaultJwks(supabaseUrl), {
       issuer: opts.issuer ?? `${supabaseUrl}/auth/v1`,
       audience: "authenticated",
