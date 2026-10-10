@@ -476,6 +476,30 @@ async function appearancePass(browser: Browser, base: string, db: ReturnType<typ
           await noSideScroll("/profile with a 60-character name");
           await shot("profile-long-name");
           await page.unroute("**/api/user");
+
+          // Large portal totals (eight-digit XP and gems, a five-digit streak) in the HUD.
+          const big = await context.newPage();
+          await big.addInitScript(() => {
+            (window as { __tsMockTotals?: unknown }).__tsMockTotals = { xp: 99_999_999, gems: 99_999_999, streak: 99_999 };
+          });
+          await big.goto(base + "/learn");
+          await hudXp(big);
+          const hud = await big.evaluate(() => {
+            const header = document.querySelector("header")!.getBoundingClientRect();
+            return {
+              sw: document.documentElement.scrollWidth,
+              iw: window.innerWidth,
+              right: Math.round(Math.max(...[...document.querySelectorAll("header *")].map((el) => el.getBoundingClientRect().right))),
+              xp: document.querySelector('[title="Total XP"]')?.textContent ?? "",
+              height: Math.round(header.height),
+            };
+          });
+          check(
+            hud.xp.includes("99999999") && hud.sw <= hud.iw && hud.right <= hud.iw,
+            `${tag} the HUD with 99,999,999 XP and gems and a 99,999-day streak fits (scrollWidth ${hud.sw}, rightmost ${hud.right}, header ${hud.height}px tall)`
+          );
+          if (shotsDir) await big.screenshot({ path: join(shotsDir, `learn-big-totals-${vp.width}-${theme}.png`) });
+          await big.close();
         }
         await page.goto(base + "/no-such-page");
         await page.getByRole("heading", { name: "Page not found" }).waitFor({ timeout: 60_000 });

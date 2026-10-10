@@ -6,7 +6,7 @@ import { ChunkyButton } from "@/components/chunky-button";
 import { HomeRoomButton } from "@/components/home-room";
 import { reloadForAccountChange, takeAccountChangedNotice } from "@/lib/account-change";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
-import { loadDevKit, loadRealKit, shouldUseMockKit, type Kit } from "@/lib/kit";
+import { loadDevKit, loadRealKit, shouldUseMockKit, type Kit, type KitTotals } from "@/lib/kit";
 import { useGameStore } from "@/lib/store";
 import type { UserDTO } from "@/lib/types";
 
@@ -34,6 +34,21 @@ export function useKit(): Kit {
  * standard rule 3.4): `redirecting` when the kit has sent the learner to sign in, and
  * `kit-failed` with a retry that re-runs the boot without a reload.
  */
+/**
+ * Mock mode only: an e2e init script may set `window.__tsMockTotals` to show large portal
+ * totals in the HUD (like `__tsMockDisplayName` in Factors and Word Power). Numbers only.
+ */
+function mockTotalsOverride(): Partial<KitTotals> {
+  const raw = (window as { __tsMockTotals?: unknown }).__tsMockTotals;
+  if (!raw || typeof raw !== "object") return {};
+  const out: Partial<KitTotals> = {};
+  for (const k of ["xp", "gems", "level", "streak"] as const) {
+    const v = (raw as Record<string, unknown>)[k];
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
 export function KitProvider({ children }: { children: React.ReactNode }) {
   const [boot, setBoot] = useState<Boot>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
@@ -56,7 +71,7 @@ export function KitProvider({ children }: { children: React.ReactNode }) {
           // Dev: the server's mock portal is the only reward state (criterion 20).
           const res = await apiFetch("/api/user");
           const user: UserDTO | null = res.ok ? await res.json() : null;
-          if (user?.devTotals) hydrate(user.devTotals);
+          if (user?.devTotals) hydrate({ ...user.devTotals, ...mockTotalsOverride() });
         } else {
           hydrate(kit.totals);
         }

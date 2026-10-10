@@ -118,11 +118,12 @@ export function TopBar({
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur px-4 py-3">
-      <div className="flex items-center justify-between">
+      {/* Both the row and the totals wrap, so large portal totals never widen a phone screen. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
         <CourseSwitcher activeCourse={activeCourse} courses={courses} />
         <div
           className={cn(
-            "flex items-center gap-5 font-display font-bold transition-opacity",
+            "ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-4 gap-y-1 font-display font-bold transition-opacity sm:gap-x-5",
             hydrated ? "opacity-100" : "opacity-0"
           )}
         >
