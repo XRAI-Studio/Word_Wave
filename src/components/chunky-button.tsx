@@ -10,7 +10,9 @@ const variants = {
   success: "bg-verde text-white border-verde-deep hover:brightness-95",
   danger: "bg-heart text-white border-heart-deep hover:brightness-95",
   saffron: "bg-saffron text-on-saffron border-saffron-deep hover:brightness-95",
-  outline: "bg-surface text-ink border-line hover:bg-paper",
+  // Outline sits on surfaces (dialogs, cards): a full strong boundary, 3.35:1 on white and
+  // 3.11:1 on the paper hover fill in light, 4.21 / 4.85 in dark (Codex WW-APPEARANCE-001).
+  outline: "bg-surface text-ink border-x-2 border-t-2 border-line-strong hover:bg-paper",
   selected: "bg-brand-soft text-brand-ink border-brand-ink",
 } as const;
 

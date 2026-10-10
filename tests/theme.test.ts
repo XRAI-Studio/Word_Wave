@@ -81,3 +81,14 @@ describe("static production 500 page (same gap as Codex PORTAL-APPEARANCE-012)",
     expect(ERROR_PAGE_STYLE).not.toMatch(/color-scheme:\s*light/);
   });
 });
+
+describe("outline ChunkyButton boundary (Codex WW-APPEARANCE-001)", () => {
+  it("draws a full strong border, not the faint line, so it reads as a control on a dialog surface", () => {
+    const src = readFileSync(join(__dirname, "../src/components/chunky-button.tsx"), "utf8");
+    const outline = /outline:\s*"([^"]*)"/.exec(src)?.[1] ?? "";
+    expect(outline).toContain("border-line-strong");
+    expect(outline).toMatch(/border-x-2/);
+    expect(outline).toMatch(/border-t-2/);
+    expect(outline).not.toMatch(/border-line(?!-)/);
+  });
+});
