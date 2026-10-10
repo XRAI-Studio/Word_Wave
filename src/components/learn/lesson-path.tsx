@@ -65,7 +65,7 @@ export function LessonPath({
                     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink",
                     state === "done" && "bg-saffron border-saffron-deep text-on-saffron",
                     state === "active" && "bg-brand border-brand-deep text-white",
-                    state === "open" && "bg-surface border-line text-brand-ink"
+                    state === "open" && "bg-surface border-x-2 border-t-2 border-line-strong text-brand-ink"
                   )}
                 >
                   {state === "done" ? (

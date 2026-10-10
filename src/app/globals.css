@@ -188,3 +188,13 @@ body {
 :root [data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-description] {
   color: var(--color-ink-soft);
 }
+
+/* On a phone, text-sm carries reading text (unit and section descriptions, instructions),
+   which is at least 16px there (class standard §6.4; Codex WW-APPEARANCE-102). Captions and
+   counts use text-xs (13px). */
+@media (max-width: 639.98px) {
+  :root {
+    --text-sm: 1rem;
+    --text-sm--line-height: 1.5;
+  }
+}

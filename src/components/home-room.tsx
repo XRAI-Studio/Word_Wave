@@ -169,7 +169,7 @@ export function HomeRoomButton({ className }: { className?: string }) {
         onClick={(e) => void request(HOME, e.currentTarget)}
         aria-disabled={busy || undefined}
         className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-b-4 border-line bg-surface px-3 py-1.5",
+          "inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-b-4 border-line-strong bg-surface px-3 py-1.5",
           "font-display text-sm font-bold text-ink transition-colors hover:border-brand-ink hover:text-brand-ink",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-ink",
           busy && "opacity-60",

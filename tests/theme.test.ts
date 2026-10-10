@@ -92,3 +92,15 @@ describe("outline ChunkyButton boundary (Codex WW-APPEARANCE-001)", () => {
     expect(outline).not.toMatch(/border-line(?!-)/);
   });
 });
+
+describe("enabled outlined controls and phone reading text (Codex WW-APPEARANCE-101, -102)", () => {
+  const read = (rel: string) => readFileSync(join(__dirname, "..", rel), "utf8");
+  it("course choices, the Home Room button and open lessons use the strong boundary", () => {
+    expect(read("src/app/welcome/page.tsx")).toMatch(/border-2 border-b-4 border-line-strong bg-surface px-4 py-4 text-left/);
+    expect(read("src/components/home-room.tsx")).toMatch(/border-2 border-b-4 border-line-strong bg-surface px-3 py-1\.5/);
+    expect(read("src/components/learn/lesson-path.tsx")).toMatch(/state === "open" && "bg-surface border-x-2 border-t-2 border-line-strong/);
+  });
+  it("text-sm is 16px below 640px", () => {
+    expect(read("src/app/globals.css")).toMatch(/@media \(max-width: 639\.98px\) \{\s*:root \{\s*--text-sm: 1rem;/);
+  });
+});

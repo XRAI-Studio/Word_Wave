@@ -429,6 +429,16 @@ async function appearancePass(browser: Browser, base: string, db: ReturnType<typ
         await page.getByRole("button", { name: /start lesson$/ }).waitFor({ timeout: 60_000 });
         await themed("/learn");
         await noSideScroll("/learn");
+        if (phone) {
+          // Unit and section descriptions are text-sm reading text: 16px on a phone (Codex
+          // WW-APPEARANCE-102). Every visible text-sm element on the learn path is measured.
+          const sm = await page.evaluate(() =>
+            [...document.querySelectorAll<HTMLElement>(".text-sm")]
+              .filter((el) => el.offsetParent !== null && (el.textContent ?? "").trim().length > 0)
+              .map((el) => parseFloat(getComputedStyle(el).fontSize)),
+          );
+          check(sm.length > 0 && sm.every((px) => px >= 16), `${tag} /learn: ${sm.length} text-sm elements all >= 16px (smallest ${Math.min(...sm)}px)`);
+        }
         await notWhite("the navigation", phone ? "nav[aria-label=Primary]" : "aside");
         await shot("learn");
         await page.getByRole("button", { name: /Switch course/ }).click();

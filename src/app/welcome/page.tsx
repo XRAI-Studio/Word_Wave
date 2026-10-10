@@ -58,7 +58,7 @@ export default function WelcomePage() {
               type="button"
               onClick={() => choose(c.code)}
               disabled={choosing !== null || departing}
-              className="flex w-full items-center gap-4 rounded-2xl border-2 border-b-4 border-line bg-surface px-4 py-4 text-left font-display font-bold transition-colors hover:border-brand-ink disabled:opacity-60"
+              className="flex w-full items-center gap-4 rounded-2xl border-2 border-b-4 border-line-strong bg-surface px-4 py-4 text-left font-display font-bold transition-colors hover:border-brand-ink disabled:opacity-60"
             >
               <span className="text-3xl leading-none" aria-hidden>
                 {c.emblem}
