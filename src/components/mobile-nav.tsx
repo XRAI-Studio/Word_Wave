@@ -14,7 +14,8 @@ const items = [
 
 // Bottom tab bar for phones; the sidebar covers sm and up.
 export function MobileNav() {
-  const pathname = usePathname();
+  // Typed nullable since src/pages exists (the static 500 page); always set in the App Router.
+  const pathname = usePathname() ?? "";
   return (
     <nav
       aria-label="Primary"

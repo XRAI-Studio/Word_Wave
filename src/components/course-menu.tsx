@@ -30,7 +30,8 @@ interface CourseData {
 
 // Sidebar dropdown to jump straight to any lesson in the course.
 export function CourseMenu() {
-  const pathname = usePathname();
+  // Typed nullable since src/pages exists (the static 500 page); always set in the App Router.
+  const pathname = usePathname() ?? "";
   const [course, setCourse] = useState<CourseData | null>(null);
 
   // Refetch when the route changes so completion marks stay fresh.

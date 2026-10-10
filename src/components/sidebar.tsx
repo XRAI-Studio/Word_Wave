@@ -14,7 +14,8 @@ const items = [
 ];
 
 export function Sidebar() {
-  const pathname = usePathname();
+  // Typed nullable since src/pages exists (the static 500 page); always set in the App Router.
+  const pathname = usePathname() ?? "";
   return (
     <aside className="hidden sm:flex flex-col gap-2 border-r border-line bg-surface px-3 py-6 w-16 lg:w-56 shrink-0">
       <Link href="/learn" className="mb-6 px-2 font-display text-2xl font-extrabold text-brand-ink">
