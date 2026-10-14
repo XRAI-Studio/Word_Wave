@@ -11,11 +11,13 @@ import { MultipleChoice } from "@/components/quiz/multiple-choice";
 import { ResultScreen } from "@/components/quiz/result-screen";
 import { Translate } from "@/components/quiz/translate";
 import { useKit } from "@/components/kit-provider";
+import { challengeAnswerDetail, matchAnswerDetail } from "@/lib/answer-detail";
 import { RedirectingError } from "@/lib/api-fetch";
 import type { AwardOutcome } from "@/lib/completion";
 import { clearPendingFor, keepPending, type PendingSubmission } from "@/lib/pending-submission";
 import { reloadForAccountChange } from "@/lib/account-change";
 import { leaveGuard } from "@/lib/leave-guard";
+import { reportAnswer } from "@/lib/kit";
 import { CompletionError, hudTotalsAfter, postCompletion } from "@/lib/submit-completion";
 import { useGameStore } from "@/lib/store";
 import { normalizeTyped } from "@/lib/course-policy";
@@ -37,6 +39,7 @@ export function Quiz({
   lessonId,
   labels = { correct: "¡Correcto!", celebrate: "¡Muy bien!" },
   courseCode,
+  skill,
 }: {
   challenges: ChallengeDTO[];
   mode: "lesson" | "review";
@@ -45,6 +48,8 @@ export function Quiz({
   /** Selects the typed-answer policy (diacritic + j/v handling). Falls back to
    *  Spanish, matching the default labels above. */
   courseCode?: string;
+  /** What the answers practise, for the portal's answer log ("Spanish: Greetings"). */
+  skill?: string;
 }) {
   const kit = useKit();
   const leave = useGuardedLeave();
@@ -130,27 +135,29 @@ export function Quiz({
   }
 
   function check() {
+    if (current.type === "MATCH") return; // graded pair by pair (MatchPairs)
+    let given: string;
+    let correct: boolean;
     if (current.type === "MULTIPLE_CHOICE") {
-      if (mcValue === current.correctAnswer) handleCorrect();
-      else handleWrong();
+      given = mcValue ?? "";
+      correct = mcValue === current.correctAnswer;
     } else if (current.type === "TRANSLATE") {
-      const built = trValue
-        .map((i) => current.meta.wordBank[i])
-        .join(" ")
-        .toLowerCase()
-        .trim();
-      if (built === current.correctAnswer.toLowerCase().trim()) handleCorrect();
-      else handleWrong();
-    } else if (current.type === "FILL_BLANK") {
+      given = trValue.map((i) => current.meta.wordBank[i]).join(" ");
+      correct = given.toLowerCase().trim() === current.correctAnswer.toLowerCase().trim();
+    } else {
       // Accept the expected answer with any parenthetical qualifier dropped
       // ("I am (feeling)" accepts "i am").
       const expected = [
         current.correctAnswer,
         current.correctAnswer.replace(/\([^)]*\)/g, ""),
       ].map((answer) => normalizeTyped(answer, courseCode));
-      if (expected.includes(normalizeTyped(fbValue, courseCode))) handleCorrect();
-      else handleWrong();
+      given = fbValue;
+      correct = expected.includes(normalizeTyped(fbValue, courseCode));
     }
+    // Every checked answer, right or wrong, goes to the portal's answer log.
+    reportAnswer(kit, correct, challengeAnswerDetail(current, given, skill));
+    if (correct) handleCorrect();
+    else handleWrong();
   }
 
   async function submit(p: PendingSubmission) {
@@ -319,7 +326,11 @@ export function Quiz({
               <MatchPairs
                 key={`${current.id}-${idx}`}
                 meta={current.meta}
-                onMiss={(ids) => recordWords(ids, false)}
+                onMatch={(wordId) => reportAnswer(kit, true, matchAnswerDetail(current.meta, wordId, wordId, skill))}
+                onMiss={(ids) => {
+                  reportAnswer(kit, false, matchAnswerDetail(current.meta, ids[0], ids[1], skill));
+                  recordWords(ids, false);
+                }}
                 onComplete={handleCorrect}
               />
             )}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
 import { SessionPage } from "@/components/session-bar";
+import { reviewSkill } from "@/lib/answer-detail";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
@@ -27,6 +28,7 @@ function ReviewLoader() {
   const [challenges, setChallenges] = useState<ChallengeDTO[] | null>(null);
   const [labels, setLabels] = useState<Labels>(DEFAULT_LABELS);
   const [courseCode, setCourseCode] = useState<string | undefined>();
+  const [courseName, setCourseName] = useState<string | undefined>();
 
   useEffect(() => {
     apiFetch("/api/review")
@@ -35,6 +37,7 @@ function ReviewLoader() {
         setChallenges(d.challenges);
         if (d.labels) setLabels(d.labels);
         if (d.courseCode) setCourseCode(d.courseCode);
+        if (d.courseName) setCourseName(d.courseName);
       })
       .catch((e) => {
         if (!(e instanceof RedirectingError)) setChallenges([]);
@@ -67,5 +70,13 @@ function ReviewLoader() {
     );
   }
 
-  return <Quiz challenges={challenges} mode="review" labels={labels} courseCode={courseCode} />;
+  return (
+    <Quiz
+      challenges={challenges}
+      mode="review"
+      labels={labels}
+      courseCode={courseCode}
+      skill={reviewSkill(courseName)}
+    />
+  );
 }

@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { PendingRecovery } from "@/components/pending-recovery";
 import { Quiz } from "@/components/quiz/quiz";
 import { SessionPage } from "@/components/session-bar";
+import { lessonSkill } from "@/lib/answer-detail";
 import type { ChallengeDTO } from "@/lib/types";
 import { apiFetch, RedirectingError } from "@/lib/api-fetch";
 
@@ -12,6 +13,7 @@ interface LessonResponse {
   title: string;
   unitTitle: string;
   courseCode: string;
+  courseName?: string;
   labels: { correct: string; celebrate: string };
   challenges: ChallengeDTO[];
 }
@@ -61,6 +63,7 @@ function LessonLoader({ params }: { params: Promise<{ lessonId: string }> }) {
       lessonId={lesson.id}
       labels={lesson.labels}
       courseCode={lesson.courseCode}
+      skill={lessonSkill(lesson.courseName, lesson.unitTitle)}
     />
   );
 }

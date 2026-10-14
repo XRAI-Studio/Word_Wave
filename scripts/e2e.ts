@@ -666,6 +666,25 @@ async function learnerFlowInDevMode() {
     await playLesson(page, firstLesson.challenges, true);
     check((await resultStatus(page)) === "awarded", "first completion: award status awarded");
     check((await page.getByTestId("xp-earned").innerText()) === "10", "result screen shows 10 XP earned");
+    // Every graded attempt reached kit.answer (the portal's answer log): one per checked
+    // challenge or match pairing, plus the deliberate mistake, which is logged as wrong.
+    const logged = await page.evaluate(
+      () =>
+        (window as unknown as { __tsMockTransport?: { answers?: Array<Record<string, unknown>> } }).__tsMockTransport
+          ?.answers ?? []
+    );
+    const gradedRight = firstLesson.challenges.reduce((n, ch) => n + (ch.type === "MATCH" ? ch.meta.pairs!.length : 1), 0);
+    const wrong = logged.filter((a) => a.correct === false);
+    check(
+      logged.length === gradedRight + 1 && wrong.length === 1,
+      `kit.answer got every graded attempt (${logged.length} logged, ${wrong.length} wrong; expected ${gradedRight + 1}, 1)`
+    );
+    check(
+      wrong[0]?.item === firstLesson.challenges[0].prompt &&
+        wrong[0]?.expected === firstLesson.challenges[0].correctAnswer &&
+        String(wrong[0]?.skill).startsWith("Spanish: "),
+      `the mistake is logged with its prompt, answer and skill (${JSON.stringify(wrong[0])})`
+    );
 
     const progress = await db.lessonProgress.findMany({ where: { userId: MOCK_USER } });
     check(progress.length === 1 && progress[0].lessonId === first.id, "one LessonProgress row");

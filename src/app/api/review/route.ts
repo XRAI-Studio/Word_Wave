@@ -61,6 +61,7 @@ export async function GET() {
   return NextResponse.json({
     dueCount: due.length,
     courseCode: course.code,
+    courseName: course.name,
     labels: { correct: course.correctLabel, celebrate: course.celebrateLabel },
     challenges,
   });

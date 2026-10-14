@@ -14,14 +14,16 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 // Match term↔translation. Mismatches flash red and report the involved words
-// as misses (like Duolingo match tiles). Completes when all
-// pairs are locked.
+// as misses, [left, right] (like Duolingo match tiles); a right pairing reports its
+// word. Completes when all pairs are locked.
 export function MatchPairs({
   meta,
+  onMatch,
   onMiss,
   onComplete,
 }: {
   meta: MatchMeta;
+  onMatch?: (wordId: string) => void;
   onMiss: (wordIds: string[]) => void;
   onComplete: () => void;
 }) {
@@ -39,6 +41,7 @@ export function MatchPairs({
     if (l === r) {
       const next = new Set(locked).add(l);
       setLocked(next);
+      onMatch?.(l);
       if (next.size === meta.pairs.length) {
         // Give the last tile a beat to render as locked before completing.
         setTimeout(onComplete, 350);

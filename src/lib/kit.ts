@@ -52,6 +52,15 @@ export function isProgressUnavailable(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: unknown }).code === PROGRESS_UNAVAILABLE;
 }
 
+/** Reports one graded attempt through `kit.answer` when the kit has it; never throws. */
+export function reportAnswer(kit: Kit | null | undefined, correct: boolean, detail?: AnswerDetail): void {
+  try {
+    if (kit && typeof kit.answer === "function") kit.answer(correct, detail);
+  } catch {
+    /* answer logging must never break a lesson */
+  }
+}
+
 function progressUnavailable(): Error {
   return Object.assign(new Error("progress unavailable"), { code: PROGRESS_UNAVAILABLE });
 }
@@ -72,6 +81,18 @@ export interface KitAwardResult {
   streak: number;
   level_up: boolean;
   new_achievements: string[];
+}
+
+/** One graded answer for the portal's answer log (`kit.answer`, portal migration 0018). */
+export interface AnswerDetail {
+  /** What was asked, stable across attempts ("6 × 7", "ephemeral"). */
+  item?: string;
+  /** The topic it practises ("times 6", "Latin nouns"). */
+  skill?: string;
+  /** What the learner answered. */
+  given?: string;
+  /** The right answer. */
+  expected?: string;
 }
 
 export interface KitUser {
@@ -113,6 +134,8 @@ export interface Kit {
   /** Resolves the outcome (or `undefined` from an older kit build); never rejects. */
   save(state: unknown, summary?: unknown): Promise<SaveResult | undefined>;
   award(event: string, detail?: Record<string, unknown>): Promise<KitAwardResult>;
+  /** Records one graded attempt, right or wrong (portal migration 0018). Never throws; older kits lack it. */
+  answer?(correct: boolean, detail?: AnswerDetail): void;
   unlock(id: string): Promise<unknown>;
   toast(text: string): void;
 }
@@ -225,6 +248,8 @@ export class MemoryTransport implements MockTransport {
   failRpc = false;
   unknownEvents = new Set<string>();
   rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  /** Every `kit.answer` the mock kit recorded through this transport, in order. */
+  answers: Array<{ correct: boolean } & AnswerDetail> = [];
   private persist?: StorageLike;
   private persistKey?: string;
 
@@ -949,6 +974,14 @@ export async function createMockKit(o: MockKitOptions): Promise<Kit> {
       });
   kit.unlock = (id) => rpc("unlock", { p_achievement: id });
   kit.toast = () => undefined;
+  // The real kit batches answers to `log_answers`; the mock records them where tests can read them.
+  kit.answer = (correct, detail) => {
+    try {
+      if (transport instanceof MemoryTransport) transport.answers.push({ correct, ...detail });
+    } catch {
+      /* like the real kit, answer logging never throws */
+    }
+  };
 
   // Replay awards queued while offline, then flush dirty local state, then fetch totals.
   const queued = ((ls(queueKey) as QueuedAward[] | null) ?? []).slice();
